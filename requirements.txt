@@ -1,0 +1,22 @@
+# VisionLink Dependencies
+
+# AI & Cloud
+google-genai          # Gemini AI + TTS
+soniox                # Soniox STT
+supabase              # Supabase Python client
+
+# Hardware (Pi-specific)
+RPi.GPIO              # GPIO button handling
+picamera2             # Pi Camera v3
+
+# Image / QR
+pyzbar                # QR code reading
+opencv-python-headless  # Image processing (no GUI)
+Pillow                # Image manipulation
+
+# Audio
+pyaudio               # Audio recording
+pygame                # Audio playback / beep sounds
+
+# Utilities
+python-dotenv         # .env file loading
