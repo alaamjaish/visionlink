@@ -2,14 +2,18 @@
 Audio Module
 
 Handles microphone recording and speaker playback.
-- Recording: PyAudio (for STT input)
+- Recording: ALSA/arecord (preferred) or PyAudio fallback
 - Playback: pygame (for TTS output and beeps)
 """
 
 import io
+import os
+import shutil
+import signal
+import subprocess
 import wave
 import struct
-import threading
+import tempfile
 import time
 from pathlib import Path
 
@@ -145,36 +149,104 @@ class AudioPlayer:
 
 
 class AudioRecorder:
-    """Handles microphone recording via PyAudio."""
+    """Handles microphone recording via ALSA (preferred) or PyAudio."""
 
     def __init__(self):
+        self._backend = None
         self._pa = None
         self._stream = None
         self._recording = False
         self._frames = []
+        self._arecord_proc = None
+        self._arecord_tmp_path = None
 
     def setup(self):
-        """Initialize PyAudio."""
-        if not HAS_PYAUDIO:
-            logger.warning("pyaudio not available - recording disabled")
-            return False
+        """
+        Initialize recorder backend.
 
-        try:
-            self._pa = pyaudio.PyAudio()
-            logger.info("Audio recorder initialized")
+        Preference order:
+        1. ALSA arecord (works with I2S + ~/.asoundrc default route)
+        2. PyAudio fallback (legacy)
+        """
+        preferred = str(getattr(config, "AUDIO_BACKEND", "auto")).lower()
+        has_arecord = shutil.which("arecord") is not None
+
+        if preferred in ("auto", "alsa", "arecord") and has_arecord:
+            self._backend = "alsa_arecord"
+            logger.info("Audio recorder initialized (backend=alsa_arecord)")
             return True
-        except Exception as e:
-            logger.error(f"Audio recorder setup failed: {e}", exc_info=True)
-            return False
+
+        if preferred in ("auto", "pyaudio") and HAS_PYAUDIO:
+            try:
+                self._pa = pyaudio.PyAudio()
+                self._backend = "pyaudio"
+                logger.info("Audio recorder initialized (backend=pyaudio)")
+                return True
+            except Exception as e:
+                logger.error(f"PyAudio setup failed: {e}", exc_info=True)
+
+        if preferred in ("alsa", "arecord") and not has_arecord:
+            logger.error("Audio recorder setup failed: arecord not found")
+        elif preferred == "pyaudio" and not HAS_PYAUDIO:
+            logger.error("Audio recorder setup failed: pyaudio not available")
+        else:
+            logger.error("Audio recorder setup failed: no supported backend found")
+        return False
+
+    def _build_arecord_cmd(self, output_path: str):
+        device = getattr(config, "AUDIO_INPUT_DEVICE", "default")
+        sample_format = getattr(config, "AUDIO_ARECORD_FORMAT", "S16_LE")
+        return [
+            "arecord",
+            "-D", str(device),
+            "-f", str(sample_format),
+            "-r", str(config.AUDIO_SAMPLE_RATE),
+            "-c", str(config.AUDIO_CHANNELS),
+            output_path,
+        ]
 
     def start_recording(self):
         """Start recording from microphone."""
-        if not self._pa:
+        if not self._backend:
             logger.error("Audio recorder not initialized")
             return False
 
         if self._recording:
             logger.warning("Already recording")
+            return False
+
+        if self._backend == "alsa_arecord":
+            return self._start_recording_arecord()
+        return self._start_recording_pyaudio()
+
+    def _start_recording_arecord(self):
+        fd, tmp_path = tempfile.mkstemp(prefix="visionlink_rec_", suffix=".wav")
+        os.close(fd)
+        cmd = self._build_arecord_cmd(tmp_path)
+
+        try:
+            self._arecord_tmp_path = tmp_path
+            self._arecord_proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+            )
+            self._recording = True
+            logger.info(f"Microphone recording started (backend=alsa_arecord, cmd={' '.join(cmd)})")
+            return True
+        except Exception as e:
+            self._arecord_proc = None
+            self._arecord_tmp_path = None
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+            logger.error(f"Recording start failed (alsa_arecord): {e}", exc_info=True)
+            return False
+
+    def _start_recording_pyaudio(self):
+        if not self._pa:
+            logger.error("PyAudio backend not initialized")
             return False
 
         try:
@@ -188,10 +260,10 @@ class AudioRecorder:
                 stream_callback=self._audio_callback
             )
             self._recording = True
-            logger.info("Microphone recording started")
+            logger.info("Microphone recording started (backend=pyaudio)")
             return True
         except Exception as e:
-            logger.error(f"Recording start failed: {e}", exc_info=True)
+            logger.error(f"Recording start failed (pyaudio): {e}", exc_info=True)
             return False
 
     def _audio_callback(self, in_data, frame_count, time_info, status):
@@ -205,6 +277,59 @@ class AudioRecorder:
         if not self._recording:
             return b""
 
+        if self._backend == "alsa_arecord":
+            return self._stop_recording_arecord()
+        return self._stop_recording_pyaudio()
+
+    def _stop_recording_arecord(self) -> bytes:
+        self._recording = False
+        proc = self._arecord_proc
+        tmp_path = self._arecord_tmp_path
+        self._arecord_proc = None
+        self._arecord_tmp_path = None
+
+        try:
+            if proc and proc.poll() is None:
+                proc.send_signal(signal.SIGINT)
+                try:
+                    proc.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=1)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        proc.wait(timeout=1)
+
+            if proc and proc.stderr:
+                err = proc.stderr.read().decode("utf-8", errors="ignore").strip()
+                benign_interrupt = (
+                    "Aborted by signal Interrupt" in err
+                    or "Interrupted system call" in err
+                )
+                if err and proc.returncode not in (0, 1, 130) and not benign_interrupt:
+                    logger.warning(f"arecord stderr: {err}")
+
+            if not tmp_path or not os.path.exists(tmp_path):
+                logger.error("Recording stop failed (alsa_arecord): temp file missing")
+                return b""
+
+            with open(tmp_path, "rb") as f:
+                wav_data = f.read()
+
+            logger.info(f"Recording stopped (backend=alsa_arecord, {len(wav_data)} bytes)")
+            return wav_data
+        except Exception as e:
+            logger.error(f"Recording stop failed (alsa_arecord): {e}", exc_info=True)
+            return b""
+        finally:
+            if tmp_path:
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+
+    def _stop_recording_pyaudio(self) -> bytes:
         self._recording = False
 
         try:
@@ -222,11 +347,11 @@ class AudioRecorder:
                 wf.writeframes(b''.join(self._frames))
             wav_data = wav_buffer.getvalue()
 
-            logger.info(f"Recording stopped ({len(self._frames)} chunks, {len(wav_data)} bytes)")
+            logger.info(f"Recording stopped (backend=pyaudio, {len(self._frames)} chunks, {len(wav_data)} bytes)")
             self._frames = []
             return wav_data
         except Exception as e:
-            logger.error(f"Recording stop failed: {e}", exc_info=True)
+            logger.error(f"Recording stop failed (pyaudio): {e}", exc_info=True)
             return b""
 
     def save_recording(self, output_path: str) -> bool:
@@ -248,10 +373,12 @@ class AudioRecorder:
         return self._recording
 
     def cleanup(self):
-        """Clean up PyAudio resources."""
+        """Clean up recorder resources."""
         if self._recording:
             self.stop_recording()
         if self._pa:
             self._pa.terminate()
             self._pa = None
+        self._arecord_proc = None
+        self._arecord_tmp_path = None
         logger.info("Audio recorder cleaned up")

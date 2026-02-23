@@ -4,6 +4,15 @@
 
 ---
 
+## Critical Update (2026-02-24): Audio Debug Completed
+
+- Read this first: `AUDIO_DEBUG_HANDOFF_2026-02-24.md`
+- I2S speaker + mic are now both working on `googlevoicehat-soundcard`
+- App recorder was updated to auto-use ALSA/`arecord` backend
+- New one-command audio checks are in `Makefile` (`make audio-capture`, etc.)
+
+---
+
 ## What Is This Project?
 
 VisionLink is a **wearable industrial assistant** running on a Raspberry Pi 4B. It has two modes:

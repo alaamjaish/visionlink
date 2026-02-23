@@ -46,6 +46,15 @@ AUDIO_SAMPLE_RATE = 16000  # For STT recording
 AUDIO_CHANNELS = 1
 AUDIO_CHUNK_SIZE = 1024
 TTS_SAMPLE_RATE = 24000  # Gemini TTS outputs 24kHz PCM
+# Recorder backend:
+# - "auto": prefer ALSA arecord, fallback to PyAudio
+# - "alsa": force arecord backend
+# - "pyaudio": force PyAudio backend
+AUDIO_BACKEND = os.getenv("AUDIO_BACKEND", "auto")
+# ALSA device name from ~/.asoundrc; keep as "default" for stable routing.
+AUDIO_INPUT_DEVICE = os.getenv("AUDIO_INPUT_DEVICE", "default")
+# arecord format for ALSA backend.
+AUDIO_ARECORD_FORMAT = os.getenv("AUDIO_ARECORD_FORMAT", "S16_LE")
 
 # === Buttons (BCM GPIO pin numbers) ===
 # Documentation mode
