@@ -20,3 +20,12 @@ audio-capture-noplay:
 # Sanity-check the app's default capture path (used by AudioRecorder backend=alsa).
 audio-default-check:
 	arecord -D default -f S16_LE -r 16000 -c 1 -d 2 "$(PWD)/tests/hardware/mic_default_check.wav"
+
+.PHONY: video-av
+
+VIDEO_DURATION ?= 10
+VIDEO_OUT ?= tests/hardware/av_$(shell date +%Y%m%d_%H%M%S).mp4
+
+# Record one single MP4 with camera + mic together.
+video-av:
+	./scripts/capture_av_mp4.sh $(VIDEO_DURATION) "$(PWD)/$(VIDEO_OUT)"
