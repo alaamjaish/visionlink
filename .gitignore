@@ -13,8 +13,9 @@ venv/
 # Logs (local only)
 logs/
 
-# Session data (local only)
-sessions/
+# Session data (local only) — runtime artefacts, not the Documentation/sessions logs
+/sessions/
+~/visionlink/sessions/
 
 # Hardware test recordings (runtime artifacts, not source)
 tests/hardware/*.mp4
