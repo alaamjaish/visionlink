@@ -16,6 +16,18 @@ logs/
 # Session data (local only)
 sessions/
 
+# Hardware test recordings (runtime artifacts, not source)
+tests/hardware/*.mp4
+tests/hardware/*.wav
+tests/hardware/*.h264
+tests/hardware/*.raw
+
+# Dashboard runtime captures
+dashboard/static/captures/*.jpg
+dashboard/static/captures/*.jpeg
+dashboard/static/captures/*.png
+!dashboard/static/captures/.gitkeep
+
 # OS
 .DS_Store
 Thumbs.db
