@@ -24,13 +24,16 @@ import traceback
 from pathlib import Path
 from typing import Optional
 
-import sounddevice as sd
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from google import genai
 from google.genai import types
+
+from dashboard.audio_bridge import AudioBridge
+from dashboard.audio_worker import BLOCK, MIC_RATE, SPEAKER_RATE
+from src.ai.tools import TOOL_HANDLERS, build_tools
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -44,9 +47,8 @@ load_dotenv(PROJECT_ROOT / ".env", override=True)
 
 API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 MODEL = "gemini-3.1-flash-live-preview"
-MIC_RATE = 16000
-SPEAKER_RATE = 24000
-BLOCK = 1600  # 100 ms at 16 kHz
+# MIC_RATE / SPEAKER_RATE / BLOCK come from dashboard.audio_worker
+# so the parent and worker can never disagree on format.
 
 
 app = FastAPI(title="VisionLink Command Center")
@@ -60,6 +62,33 @@ current_session = None  # type: ignore
 current_camera = None   # type: ignore  # SessionCamera instance during snap/video modes
 live_mode: str = "audio"   # "audio" | "snap" | "video"
 last_frame_jpeg: Optional[bytes] = None
+
+# Audio I/O lives in a subprocess so an ALSA `plug` device assertion
+# (the C-level pcm_plugin.c crash) only kills the child, not the FastAPI
+# server. The bridge auto-restarts the worker on death.
+_audio_bridge: Optional[AudioBridge] = None
+
+
+def get_bridge() -> AudioBridge:
+    global _audio_bridge
+    if _audio_bridge is None:
+        _audio_bridge = AudioBridge()
+    return _audio_bridge
+
+
+@app.on_event("startup")
+async def _startup_audio():
+    # Spawn the audio worker eagerly so the first START LIVE click is fast
+    get_bridge()
+    print("[startup] audio bridge online", flush=True)
+
+
+@app.on_event("shutdown")
+async def _shutdown_audio():
+    global _audio_bridge
+    if _audio_bridge is not None:
+        _audio_bridge.shutdown()
+        _audio_bridge = None
 state = {
     "live_connected": False,
     "latest_photo": None,
@@ -82,6 +111,22 @@ async def broadcast(event: dict) -> None:
 async def log(msg: str, level: str = "info") -> None:
     print(f"[{level}] {msg}", flush=True)
     await broadcast({"type": "log", "level": level, "msg": msg, "ts": time.time()})
+
+
+def dlog(msg: str, level: str = "debug") -> None:
+    """Sync-friendly debug log: prints AND fires a broadcast task in the background.
+
+    Use from inside hot paths (mic loop, receive loop) where awaiting broadcast
+    would be noisy. The dashboard renders it in the Log panel like normal.
+    """
+    print(f"[{level}] {msg}", flush=True)
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    loop.create_task(broadcast(
+        {"type": "log", "level": level, "msg": msg, "ts": time.time()}
+    ))
 
 
 @app.get("/")
@@ -148,14 +193,16 @@ async def run_live_session(mode: str = "audio") -> None:
     await log(f"Starting Live session — mode={live_mode}")
 
     client = genai.Client(api_key=API_KEY, http_options={"api_version": "v1alpha"})
-    # Tuned VAD: low sensitivity + 800ms silence before Gemini decides the user is done.
-    # Less-sensitive detection avoids false triggers from I2S mic noise / speaker bleed.
+    # VAD tuned for the SPH0645LM4H I2S mic, which has a hot noise floor.
+    # HIGH end-sensitivity + 500ms silence is required because LOW end-sensitivity
+    # was treating ambient room noise as ongoing speech, leaving turns un-committed
+    # for 30+ seconds. Trade-off: may occasionally cut off slow speakers.
     vad = types.AutomaticActivityDetection(
         disabled=False,
-        start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_LOW,
-        end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_LOW,
+        start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_HIGH,
+        end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_HIGH,
         prefix_padding_ms=200,
-        silence_duration_ms=800,
+        silence_duration_ms=500,
     )
     config = types.LiveConnectConfig(
         response_modalities=["AUDIO"],
@@ -164,23 +211,50 @@ async def run_live_session(mode: str = "audio") -> None:
         realtime_input_config=types.RealtimeInputConfig(
             automatic_activity_detection=vad
         ),
+        tools=build_tools(),
         system_instruction=types.Content(parts=[types.Part.from_text(
             text=(
-                "You are VisionLink, a friendly wearable assistant for a factory "
-                "worker. Keep replies short and spoken-friendly."
+                "You are VisionLink, a wearable assistant on a factory floor.\n\n"
+                "CRITICAL RULE — YOU HAVE NO MEMORIZED FACTORY KNOWLEDGE:\n"
+                "You do NOT know any torque specs, part codes, maintenance "
+                "intervals, or safety notes from training. The ONLY way to "
+                "answer factory questions is by calling the lookup_component "
+                "tool. If you answer a parts question without first calling "
+                "lookup_component, you have failed.\n\n"
+                "WHEN TO CALL lookup_component:\n"
+                "- 'What's the torque on pump A3?' -> lookup_component(query='pump A3')\n"
+                "- 'Tell me about the main engine bolt' -> lookup_component(query='main engine bolt')\n"
+                "- 'How often do I service valve B7?' -> lookup_component(query='valve B7')\n"
+                "- 'What does PMP-A3-IMP need?' -> lookup_component(query='PMP-A3-IMP')\n"
+                "- 'Anything you know about the pump?' -> lookup_component(query='pump')\n"
+                "- ANY question naming or referring to a part/component -> CALL THE TOOL\n\n"
+                "WHEN NOT TO CALL THE TOOL:\n"
+                "- Greetings ('hi', 'hello', 'how are you')\n"
+                "- Questions with no part reference ('what time is it?')\n"
+                "- Pure conversational filler\n\n"
+                "AFTER THE TOOL RETURNS:\n"
+                "- Read ONLY the fields in the returned rows. NEVER invent values.\n"
+                "- If rows is empty, say exactly: "
+                "\"I don't have that information in the factory records.\"\n"
+                "- Before calling the tool, say a quick filler like \"one sec\".\n\n"
+                "STYLE:\n"
+                "- 1-2 sentences, spoken-friendly.\n"
+                "- Numbers as words ('forty-two newton metres', not '42 Nm').\n"
+                "- Don't read part codes or IDs aloud unless asked."
             )
         )]),
     )
 
-    mic_stream = sd.RawInputStream(
-        samplerate=MIC_RATE, channels=1, dtype="int16", blocksize=BLOCK
+    # Audio I/O is in a subprocess (see dashboard/audio_worker.py). Drain the
+    # mic queue so this session starts with a clean buffer (no stale audio).
+    bridge = get_bridge()
+    if not bridge.is_alive():
+        bridge.restart()
+        await log("Audio worker was dead, restarted")
+    dropped_stale = bridge.drain_mic()
+    await log(
+        f"Audio worker ready (drained {dropped_stale} stale mic blocks)"
     )
-    spk_stream = sd.RawOutputStream(
-        samplerate=SPEAKER_RATE, channels=1, dtype="int16"
-    )
-    mic_stream.start()
-    spk_stream.start()
-    await log("Mic + speaker streams open")
 
     # Half-duplex + interruptable speaker playback:
     # - Gemini's audio chunks go into a queue
@@ -191,6 +265,7 @@ async def run_live_session(mode: str = "audio") -> None:
     gemini_speaking = asyncio.Event()     # set while there is pending Gemini audio
 
     def flush_speaker_queue() -> int:
+        """Drop everything still queued for the speaker (asyncio + bridge)."""
         dropped = 0
         while not speaker_queue.empty():
             try:
@@ -198,6 +273,7 @@ async def run_live_session(mode: str = "audio") -> None:
                 dropped += 1
             except asyncio.QueueEmpty:
                 break
+        dropped += bridge.flush_speaker()
         return dropped
 
     # Open the session camera if the mode needs it
@@ -249,49 +325,139 @@ async def run_live_session(mode: str = "audio") -> None:
                         print(f"[video ] error: {e}", flush=True)
 
             async def send_mic() -> None:
-                """Read mic and send to Gemini, but stay silent while Gemini is talking."""
+                """Read mic from the audio worker and send to Gemini, mute while Gemini talks.
+
+                The SPH0645 I2S mic delivers a steady DC offset (~2000 in int16)
+                even when silent, which buries the voice signal and confuses
+                Gemini's VAD. We remove the DC offset (subtract block mean)
+                and apply a fixed gain so voice reaches ~50% full scale.
+                """
+                import numpy as np
+                MIC_GAIN = 6.0  # voice was ~8% full scale; 6x → ~48%, room to spare
                 sent = 0
                 muted = 0
+                raw_peak = 0
+                clean_peak = 0
+                rolling_n = 0
                 while True:
-                    data, _ = await loop.run_in_executor(None, mic_stream.read, BLOCK)
+                    try:
+                        data = await bridge.read_mic_block()
+                    except Exception as e:
+                        dlog(f"mic read error: {e} — restarting audio worker")
+                        bridge.restart()
+                        await asyncio.sleep(0.4)
+                        continue
                     if gemini_speaking.is_set():
                         muted += 1
                         if muted % 20 == 0:
-                            print(f"[mic   ] muted ({muted} blocks, half-duplex)", flush=True)
+                            dlog(f"mic muted ({muted} blocks, half-duplex while Gemini talks)")
                         continue
+                    raw = bytes(data)
+                    arr = np.frombuffer(raw, dtype=np.int16).astype(np.int32)
+                    if arr.size:
+                        raw_peak = max(raw_peak, int(np.abs(arr).max()))
+                        arr = arr - int(arr.mean())
+                        arr = np.clip(arr * MIC_GAIN, -32768, 32767).astype(np.int16)
+                        clean_peak = max(clean_peak, int(np.abs(arr).max()))
+                        rolling_n += 1
+                    out = arr.tobytes()
                     await session.send_realtime_input(
                         audio=types.Blob(
-                            data=bytes(data),
+                            data=out,
                             mime_type=f"audio/pcm;rate={MIC_RATE}",
                         )
                     )
                     sent += 1
-                    if sent % 100 == 0:
-                        print(f"[mic   ] sent {sent} blocks to Gemini", flush=True)
+                    if sent % 10 == 0:
+                        raw_pct = (raw_peak / 32767.0) * 100.0
+                        clean_pct = (clean_peak / 32767.0) * 100.0
+                        dlog(
+                            f"mic sent {sent} ({sent*BLOCK/MIC_RATE:.1f}s) "
+                            f"raw_peak={raw_peak} ({raw_pct:.1f}%) "
+                            f"clean_peak={clean_peak} ({clean_pct:.1f}%)"
+                        )
+                        raw_peak = 0
+                        clean_peak = 0
+                        rolling_n = 0
 
             async def play_speaker() -> None:
-                """Drain speaker queue to the output stream; un-mute mic when idle."""
+                """Forward Gemini audio chunks to the audio-worker subprocess."""
                 while True:
                     try:
                         chunk = await asyncio.wait_for(speaker_queue.get(), timeout=0.2)
                     except asyncio.TimeoutError:
-                        if gemini_speaking.is_set() and speaker_queue.empty():
-                            # Queue drained: let pending ALSA buffer finish, then un-mute mic
+                        # Idle: if queue is empty AND the bridge has nothing
+                        # left to play, un-mute the mic.
+                        if (gemini_speaking.is_set()
+                                and speaker_queue.empty()
+                                and not bridge.speaker_pending()):
                             await asyncio.sleep(0.25)
                             gemini_speaking.clear()
-                            print("[spk   ] queue drained, mic un-muted", flush=True)
+                            dlog("speaker queue drained, mic un-muted")
                         continue
-                    await asyncio.to_thread(spk_stream.write, chunk)
+                    # write_speaker can block up to 500 ms when the worker queue
+                    # is full — run it off the event loop so the mic/receive
+                    # tasks aren't paused.
+                    await asyncio.to_thread(bridge.write_speaker, chunk)
 
             async def receive_turns() -> None:
                 """Outer loop: session.receive() returns per-turn, so keep re-entering it."""
                 turn_num = 0
                 while True:
                     turn_num += 1
-                    print(f"[turn  ] #{turn_num} waiting for Gemini...", flush=True)
+                    dlog(f"turn #{turn_num} waiting for Gemini...")
                     msg_count = 0
                     async for message in session.receive():
                         msg_count += 1
+
+                        if msg_count <= 30 or msg_count % 50 == 0:
+                            populated = []
+                            for a in dir(message):
+                                if a.startswith("_"):
+                                    continue
+                                try:
+                                    v = getattr(message, a)
+                                except Exception:
+                                    continue
+                                if v is None or callable(v):
+                                    continue
+                                populated.append(a)
+                            dlog(f"recv #{msg_count} attrs={populated}")
+
+                        tc = getattr(message, "tool_call", None)
+                        if tc and getattr(tc, "function_calls", None):
+                            responses = []
+                            for fc in tc.function_calls:
+                                args_dict = dict(fc.args or {})
+                                handler = TOOL_HANDLERS.get(fc.name)
+                                if handler is None:
+                                    result = {"error": f"unknown tool {fc.name}"}
+                                    dlog(f"TOOL unknown: {fc.name}", "warning")
+                                else:
+                                    try:
+                                        result = await handler(args_dict)
+                                        dlog(
+                                            f"TOOL {fc.name}({args_dict}) -> "
+                                            f"{str(result)[:200]}"
+                                        )
+                                    except Exception as e:
+                                        result = {"error": str(e)}
+                                        dlog(f"TOOL {fc.name} ERROR: {e}", "error")
+                                responses.append(types.FunctionResponse(
+                                    id=fc.id,
+                                    name=fc.name,
+                                    response={"result": result},
+                                ))
+                            await session.send_tool_response(
+                                function_responses=responses
+                            )
+                            await broadcast({
+                                "type": "tool_call",
+                                "name": tc.function_calls[0].name,
+                                "args": dict(tc.function_calls[0].args or {}),
+                            })
+                            continue
+
                         if getattr(message, "data", None):
                             gemini_speaking.set()
                             await speaker_queue.put(message.data)
@@ -301,25 +467,24 @@ async def run_live_session(mode: str = "audio") -> None:
                         it = getattr(sc, "input_transcription", None)
                         ot = getattr(sc, "output_transcription", None)
                         if it and it.text:
-                            print(f"[user  ] {it.text!r}", flush=True)
+                            dlog(f"USER said: {it.text!r}")
                             await broadcast(
                                 {"type": "transcript", "role": "user", "text": it.text}
                             )
                         if ot and ot.text:
-                            print(f"[gemini] {ot.text!r}", flush=True)
+                            dlog(f"GEMINI said: {ot.text!r}")
                             await broadcast(
                                 {"type": "transcript", "role": "gemini", "text": ot.text}
                             )
                         if getattr(sc, "interrupted", False):
                             dropped = flush_speaker_queue()
                             gemini_speaking.clear()
-                            print(f"[event ] INTERRUPTED - dropped {dropped} queued chunks", flush=True)
+                            dlog(f"INTERRUPTED — dropped {dropped} queued speaker chunks")
                             await broadcast({"type": "interrupted"})
                         if getattr(sc, "turn_complete", False):
-                            print(f"[event ] turn_complete (turn #{turn_num}, {msg_count} msgs)", flush=True)
+                            dlog(f"turn_complete (turn #{turn_num}, {msg_count} msgs received)")
                             await broadcast({"type": "turn_complete"})
-                    # session.receive() exited for this turn; outer while True starts the next one
-                    print(f"[turn  ] #{turn_num} ended, looping for next turn", flush=True)
+                    dlog(f"turn #{turn_num} ended — looping for next turn")
 
             tasks = [send_mic(), play_speaker(), receive_turns()]
             if live_mode == "video" and session_cam is not None:
@@ -333,14 +498,8 @@ async def run_live_session(mode: str = "audio") -> None:
     finally:
         current_session = None
         current_camera = None
-        try:
-            mic_stream.stop(); mic_stream.close()
-        except Exception:
-            pass
-        try:
-            spk_stream.stop(); spk_stream.close()
-        except Exception:
-            pass
+        # Audio streams live in the worker subprocess. The session ends here
+        # but the worker keeps running; next session reuses it (after drain_mic).
         if session_cam is not None:
             try:
                 await asyncio.to_thread(session_cam.close)
@@ -450,6 +609,15 @@ async def photo() -> JSONResponse:
         traceback.print_exc()
         await log(f"Photo failed: {exc}", "error")
         return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.post("/api/test_tone")
+async def test_tone() -> JSONResponse:
+    """Push a calibration tone through the same path Gemini audio uses."""
+    bridge = get_bridge()
+    bytes_sent = await asyncio.to_thread(bridge.play_test_tone, 880, 0.6, 0.5)
+    await log(f"Test tone sent ({bytes_sent} bytes via bridge to speaker)")
+    return JSONResponse({"ok": True, "bytes": bytes_sent})
 
 
 @app.get("/api/health")

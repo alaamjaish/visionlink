@@ -191,6 +191,7 @@
         <button id="btnStop"  class="btn-danger"  disabled>STOP</button>
         <button id="btnSnap"  class="btn-ghost"   disabled>SNAP TO GEMINI</button>
         <button id="btnPhoto" class="btn-ghost">TAKE PHOTO</button>
+        <button id="btnTone"  class="btn-ghost">TEST TONE</button>
         <button id="btnClear" class="btn-ghost">CLEAR TRANSCRIPT</button>
       </div>
       <div class="lights">
@@ -403,6 +404,14 @@
       appendLog('info', 'Capturing photo...');
       await post('/api/photo');
       btnPhoto.disabled = false;
+    });
+
+    const btnTone = qs('btnTone');
+    btnTone.addEventListener('click', async () => {
+      btnTone.disabled = true;
+      appendLog('info', 'Playing 880 Hz test tone through Gemini speaker path...');
+      await post('/api/test_tone');
+      setTimeout(() => btnTone.disabled = false, 1000);
     });
 
     btnClear.addEventListener('click', () => {
