@@ -29,6 +29,10 @@ dashboard/static/captures/*.jpeg
 dashboard/static/captures/*.png
 !dashboard/static/captures/.gitkeep
 
+# Per-user agent tuning (system prompt, VAD, gains) — set via the
+# Agent Settings panel in the dashboard. Local only.
+dashboard/agent_settings.json
+
 # OS
 .DS_Store
 Thumbs.db

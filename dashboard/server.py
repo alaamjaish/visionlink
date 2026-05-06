@@ -17,12 +17,13 @@ What it gives you:
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import sys
 import time
 import traceback
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -33,7 +34,7 @@ from google.genai import types
 
 from dashboard.audio_bridge import AudioBridge
 from dashboard.audio_worker import BLOCK, MIC_RATE, SPEAKER_RATE
-from src.ai.tools import TOOL_HANDLERS, build_tools
+from src.ai.tools import TOOL_HANDLERS, WORKER_NAME, build_tools
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -49,6 +50,177 @@ API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 MODEL = "gemini-3.1-flash-live-preview"
 # MIC_RATE / SPEAKER_RATE / BLOCK come from dashboard.audio_worker
 # so the parent and worker can never disagree on format.
+
+
+# ---------- Agent settings (live-tunable from the UI) ----------
+
+AGENT_SETTINGS_PATH = PROJECT_ROOT / "dashboard" / "agent_settings.json"
+
+DEFAULT_SYSTEM_PROMPT = (
+    f"You are VisionLink, a wearable assistant talking to {WORKER_NAME} "
+    f"on the factory floor.\n\n"
+    "==================================================================\n"
+    "ABSOLUTE RULE 1 — NEVER LIE ABOUT COMPLETING ACTIONS:\n"
+    "If you say 'I logged it', 'I marked it done', 'I submitted the request', "
+    "'I've added it', or any similar past-tense completion phrase, you MUST "
+    "have actually called the matching tool first. Saying you did something "
+    "without calling the tool is the WORST POSSIBLE FAILURE. If you can't "
+    "call a tool for any reason, say literally: 'Sorry, I couldn't log that — "
+    "let me try again' and stop. NEVER fake completion.\n"
+    "==================================================================\n\n"
+    "ABSOLUTE RULE 2 — VERB TRIGGERS:\n"
+    "These exact spoken verbs from the worker REQUIRE you to call the matching "
+    "tool. The topic does NOT matter (factory part, personal item, anything "
+    "the worker mentions — call the tool):\n\n"
+    "  'log' / 'log this' / 'log an incident' / 'add an incident' / 'record this'\n"
+    "       → log_incident\n"
+    "  'mark X done' / 'mark X complete' / 'I finished X' / 'X is done'\n"
+    "       → mark_task_complete\n"
+    "  'what's on my list' / 'what do I have' / 'my tasks' / 'my assignments'\n"
+    "       → get_my_assignments\n"
+    "  'request X' / 'order X' / 'I need X' / 'send me X' / 'get me X'\n"
+    "       → request_part\n"
+    "  'tell me about X' / 'what's the torque' / 'specs on X' / any part question\n"
+    "       → lookup_component\n"
+    "  'send report' / 'email X to Y' / 'send the X report to the CEO'\n"
+    "       → send_report\n\n"
+    "If you hear ANY of these triggers, you MUST emit the tool call. "
+    "Do not chat instead. Do not pretend. Do not collect more info first "
+    "unless the tool is missing a required parameter — and even then, only "
+    "ask ONE clarifying question, then call the tool.\n\n"
+    "ABSOLUTE RULE 3 — THE INFO-COLLECTION TRAP:\n"
+    "If you ask the worker for clarifying info (location, severity, etc.) "
+    "and they answer, your VERY NEXT action MUST be the tool call. Do not "
+    "summarize, do not say 'got it' without then calling. The pattern is:\n"
+    "  Worker: 'Log incident — broken phone'\n"
+    "  You: 'On it, where are you?'\n"
+    "  Worker: 'Main office'\n"
+    "  You: [CALL log_incident immediately] then say 'Done — broken phone "
+    "logged in main office.'\n\n"
+    "==================================================================\n\n"
+    "TOOLS AVAILABLE (signatures):\n\n"
+    "1. lookup_component(query: str) → factory parts catalog (read-only)\n"
+    "   Examples: 'pump A3', 'main engine bolt', 'PMP-A3-IMP'\n\n"
+    "2. log_incident(description: str, category?: str, severity?: str, location?: str) → write\n"
+    "   Categories: safety | equipment | leak | damage | other (default: other)\n"
+    "   Severities: low | medium | high | critical (default: medium)\n"
+    "   Examples that MUST trigger this tool:\n"
+    "     - 'Log a leak on conveyor 4'\n"
+    "     - 'I broke my phone' (description='broken phone', category='damage')\n"
+    "     - 'There's a slip hazard near valve B7'\n"
+    "     - 'Add an incident: motor smells burnt'\n\n"
+    "3. mark_task_complete(task_query: str) → write\n"
+    "   Examples: 'pump A3 inspection', 'bearing service', 'valve B7 seal'\n"
+    "   If response has ambiguous=true, READ THE TASK TITLES BACK and "
+    "ask which one — never guess.\n\n"
+    "4. get_my_assignments(include_complete?: bool) → read-only\n"
+    "   Default: returns only pending tasks. Set include_complete=true if "
+    "the worker says 'including done' or 'everything'.\n\n"
+    "5. request_part(part_query: str, quantity?: int, urgency?: str, reason?: str) → write\n"
+    "   Urgencies: normal | urgent | critical (default: normal)\n\n"
+    "6. send_report(report_name: str, recipient_role?: str, recipient_name?: str, recipient_email?: str, custom_message?: str) → write (sends email)\n"
+    "   Recipients are found from the managers DB by role (preferred) or name.\n"
+    "   Templates are found by name (e.g. 'daily operations report', 'incident report', 'quick note').\n"
+    "   Examples that MUST trigger this tool:\n"
+    "     - 'Send the daily operations report to the CEO'\n"
+    "       → send_report(report_name='daily operations report', recipient_role='CEO')\n"
+    "     - 'Email the incident report to the supervisor'\n"
+    "       → send_report(report_name='incident report', recipient_role='supervisor')\n"
+    "     - 'Send a quick note to the accountant: budget approval needed'\n"
+    "       → send_report(report_name='quick note', recipient_role='accountant', custom_message='budget approval needed')\n\n"
+    "==================================================================\n\n"
+    "WHEN NOT TO CALL ANY TOOL:\n"
+    "- Pure greetings: 'hi', 'hello', 'how are you', 'thanks', 'goodbye'\n"
+    "- The worker is acknowledging your reply ('ok', 'thanks', 'cool')\n"
+    "- Questions about you, the system: 'are you there', 'can you hear me'\n"
+    "When in doubt, CALL THE TOOL. False positive is fine — false negative is a lie.\n\n"
+    "BEFORE CALLING A TOOL:\n"
+    "Say a short filler ('on it', 'one sec', 'logging that now') so the "
+    "worker knows you heard them. Then call the tool. Then confirm.\n\n"
+    "AFTER A TOOL RETURNS:\n"
+    "- Use ONLY the data in the response. Never invent fields.\n"
+    "- If a tool returns an error or empty result, say so plainly.\n"
+    "- For writes, confirm explicitly: 'Done, broken phone logged in the "
+    "main office.' / 'Pump A3 inspection marked complete.' / "
+    "'Submitted, urgent gasket request.'\n\n"
+    "STYLE:\n"
+    "- 1-2 sentences, spoken-friendly.\n"
+    "- Numbers as words ('forty-two newton metres', not '42 Nm').\n"
+    "- Don't read part codes, IDs, or UUIDs aloud unless asked."
+)
+
+DEFAULT_AGENT_SETTINGS: dict[str, Any] = {
+    "system_prompt": DEFAULT_SYSTEM_PROMPT,
+    "vad": {
+        "start_sensitivity": "HIGH",   # HIGH | MEDIUM | LOW
+        "end_sensitivity":   "HIGH",
+        "prefix_padding_ms": 200,
+        "silence_duration_ms": 500,
+    },
+    "audio": {
+        "mic_gain": 6.0,  # software gain applied to mic blocks before sending
+        # speaker_gain lives in the worker subprocess (audio_worker.py) and
+        # is NOT live-tunable from here — we surface its value for visibility.
+    },
+}
+
+agent_settings: dict[str, Any] = json.loads(json.dumps(DEFAULT_AGENT_SETTINGS))
+
+
+def _deep_merge(base: dict, override: dict) -> dict:
+    out = dict(base)
+    for k, v in override.items():
+        if isinstance(v, dict) and isinstance(out.get(k), dict):
+            out[k] = _deep_merge(out[k], v)
+        else:
+            out[k] = v
+    return out
+
+
+def _load_agent_settings() -> None:
+    global agent_settings
+    if not AGENT_SETTINGS_PATH.exists():
+        agent_settings = json.loads(json.dumps(DEFAULT_AGENT_SETTINGS))
+        return
+    try:
+        loaded = json.loads(AGENT_SETTINGS_PATH.read_text())
+        agent_settings = _deep_merge(DEFAULT_AGENT_SETTINGS, loaded)
+        print(f"[agent_settings] loaded from {AGENT_SETTINGS_PATH}", flush=True)
+    except Exception as e:
+        print(f"[agent_settings] load failed: {e!r} — using defaults", flush=True)
+        agent_settings = json.loads(json.dumps(DEFAULT_AGENT_SETTINGS))
+
+
+def _save_agent_settings() -> None:
+    AGENT_SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    AGENT_SETTINGS_PATH.write_text(json.dumps(agent_settings, indent=2))
+
+
+def _describe_tools() -> list[dict[str, Any]]:
+    """Read-only schema view of every tool the agent has access to."""
+    out = []
+    for tool in build_tools():
+        for fd in tool.function_declarations or []:
+            out.append({
+                "name": fd.name,
+                "description": fd.description,
+                "parameters": fd.parameters.model_dump(exclude_none=True)
+                              if fd.parameters else None,
+            })
+    return out
+
+
+_VAD_START_MAP = {
+    "HIGH":   types.StartSensitivity.START_SENSITIVITY_HIGH,
+    "LOW":    types.StartSensitivity.START_SENSITIVITY_LOW,
+}
+_VAD_END_MAP = {
+    "HIGH":   types.EndSensitivity.END_SENSITIVITY_HIGH,
+    "LOW":    types.EndSensitivity.END_SENSITIVITY_LOW,
+}
+
+
+_load_agent_settings()
 
 
 app = FastAPI(title="VisionLink Command Center")
@@ -193,16 +365,20 @@ async def run_live_session(mode: str = "audio") -> None:
     await log(f"Starting Live session — mode={live_mode}")
 
     client = genai.Client(api_key=API_KEY, http_options={"api_version": "v1alpha"})
-    # VAD tuned for the SPH0645LM4H I2S mic, which has a hot noise floor.
-    # HIGH end-sensitivity + 500ms silence is required because LOW end-sensitivity
-    # was treating ambient room noise as ongoing speech, leaving turns un-committed
-    # for 30+ seconds. Trade-off: may occasionally cut off slow speakers.
+    # Read latest tunable values from agent_settings (mutated via /api/agent/settings)
+    vad_cfg = agent_settings["vad"]
     vad = types.AutomaticActivityDetection(
         disabled=False,
-        start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_HIGH,
-        end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_HIGH,
-        prefix_padding_ms=200,
-        silence_duration_ms=500,
+        start_of_speech_sensitivity=_VAD_START_MAP.get(
+            vad_cfg["start_sensitivity"],
+            types.StartSensitivity.START_SENSITIVITY_HIGH,
+        ),
+        end_of_speech_sensitivity=_VAD_END_MAP.get(
+            vad_cfg["end_sensitivity"],
+            types.EndSensitivity.END_SENSITIVITY_HIGH,
+        ),
+        prefix_padding_ms=int(vad_cfg["prefix_padding_ms"]),
+        silence_duration_ms=int(vad_cfg["silence_duration_ms"]),
     )
     config = types.LiveConnectConfig(
         response_modalities=["AUDIO"],
@@ -212,36 +388,12 @@ async def run_live_session(mode: str = "audio") -> None:
             automatic_activity_detection=vad
         ),
         tools=build_tools(),
+        # tool_config is rejected by LiveConnectConfig in google-genai 1.73
+        # (extra_forbidden). Live API uses tools=[...] only — no separate
+        # function_calling mode knob. Tool-calling reliability is driven by
+        # the system prompt and example density.
         system_instruction=types.Content(parts=[types.Part.from_text(
-            text=(
-                "You are VisionLink, a wearable assistant on a factory floor.\n\n"
-                "CRITICAL RULE — YOU HAVE NO MEMORIZED FACTORY KNOWLEDGE:\n"
-                "You do NOT know any torque specs, part codes, maintenance "
-                "intervals, or safety notes from training. The ONLY way to "
-                "answer factory questions is by calling the lookup_component "
-                "tool. If you answer a parts question without first calling "
-                "lookup_component, you have failed.\n\n"
-                "WHEN TO CALL lookup_component:\n"
-                "- 'What's the torque on pump A3?' -> lookup_component(query='pump A3')\n"
-                "- 'Tell me about the main engine bolt' -> lookup_component(query='main engine bolt')\n"
-                "- 'How often do I service valve B7?' -> lookup_component(query='valve B7')\n"
-                "- 'What does PMP-A3-IMP need?' -> lookup_component(query='PMP-A3-IMP')\n"
-                "- 'Anything you know about the pump?' -> lookup_component(query='pump')\n"
-                "- ANY question naming or referring to a part/component -> CALL THE TOOL\n\n"
-                "WHEN NOT TO CALL THE TOOL:\n"
-                "- Greetings ('hi', 'hello', 'how are you')\n"
-                "- Questions with no part reference ('what time is it?')\n"
-                "- Pure conversational filler\n\n"
-                "AFTER THE TOOL RETURNS:\n"
-                "- Read ONLY the fields in the returned rows. NEVER invent values.\n"
-                "- If rows is empty, say exactly: "
-                "\"I don't have that information in the factory records.\"\n"
-                "- Before calling the tool, say a quick filler like \"one sec\".\n\n"
-                "STYLE:\n"
-                "- 1-2 sentences, spoken-friendly.\n"
-                "- Numbers as words ('forty-two newton metres', not '42 Nm').\n"
-                "- Don't read part codes or IDs aloud unless asked."
-            )
+            text=agent_settings["system_prompt"]
         )]),
     )
 
@@ -333,7 +485,7 @@ async def run_live_session(mode: str = "audio") -> None:
                 and apply a fixed gain so voice reaches ~50% full scale.
                 """
                 import numpy as np
-                MIC_GAIN = 6.0  # voice was ~8% full scale; 6x → ~48%, room to spare
+                MIC_GAIN = float(agent_settings["audio"]["mic_gain"])
                 sent = 0
                 muted = 0
                 raw_peak = 0
@@ -618,6 +770,80 @@ async def test_tone() -> JSONResponse:
     bytes_sent = await asyncio.to_thread(bridge.play_test_tone, 880, 0.6, 0.5)
     await log(f"Test tone sent ({bytes_sent} bytes via bridge to speaker)")
     return JSONResponse({"ok": True, "bytes": bytes_sent})
+
+
+@app.get("/api/agent/settings")
+async def agent_settings_get() -> JSONResponse:
+    """Snapshot of every tunable + read-only piece of the agent."""
+    return JSONResponse({
+        "model": MODEL,
+        "system_prompt": agent_settings["system_prompt"],
+        "default_system_prompt": DEFAULT_SYSTEM_PROMPT,
+        "vad": agent_settings["vad"],
+        "audio": agent_settings["audio"],
+        "tools": _describe_tools(),
+        "live_active": state["live_connected"],
+        "settings_path": str(AGENT_SETTINGS_PATH),
+    })
+
+
+@app.post("/api/agent/settings")
+async def agent_settings_set(payload: dict) -> JSONResponse:
+    """Update tunable settings. Applied to the NEXT live session.
+
+    Accepts a partial dict — only the keys present are updated.
+    """
+    try:
+        if "system_prompt" in payload:
+            sp = str(payload["system_prompt"]).strip()
+            if not sp:
+                return JSONResponse(
+                    {"error": "system_prompt cannot be empty"}, status_code=400
+                )
+            agent_settings["system_prompt"] = sp
+        if "vad" in payload and isinstance(payload["vad"], dict):
+            v = agent_settings["vad"]
+            for key in ("start_sensitivity", "end_sensitivity"):
+                if key in payload["vad"]:
+                    val = str(payload["vad"][key]).upper()
+                    if val not in ("HIGH", "LOW"):
+                        return JSONResponse(
+                            {"error": f"vad.{key} must be HIGH or LOW"},
+                            status_code=400,
+                        )
+                    v[key] = val
+            for key in ("prefix_padding_ms", "silence_duration_ms"):
+                if key in payload["vad"]:
+                    n = int(payload["vad"][key])
+                    if not (0 <= n <= 5000):
+                        return JSONResponse(
+                            {"error": f"vad.{key} must be 0..5000"},
+                            status_code=400,
+                        )
+                    v[key] = n
+        if "audio" in payload and isinstance(payload["audio"], dict):
+            if "mic_gain" in payload["audio"]:
+                g = float(payload["audio"]["mic_gain"])
+                if not (0.1 <= g <= 20.0):
+                    return JSONResponse(
+                        {"error": "audio.mic_gain must be 0.1..20.0"},
+                        status_code=400,
+                    )
+                agent_settings["audio"]["mic_gain"] = g
+        if payload.get("reset"):
+            globals()["agent_settings"] = json.loads(json.dumps(DEFAULT_AGENT_SETTINGS))
+        _save_agent_settings()
+        await log("Agent settings updated (takes effect on next live session)")
+        await broadcast({"type": "agent_settings_updated"})
+        return JSONResponse({
+            "ok": True,
+            "system_prompt": agent_settings["system_prompt"],
+            "vad": agent_settings["vad"],
+            "audio": agent_settings["audio"],
+            "applies": "next live session — current session keeps its config",
+        })
+    except (ValueError, TypeError) as e:
+        return JSONResponse({"error": f"bad payload: {e}"}, status_code=400)
 
 
 @app.get("/api/health")

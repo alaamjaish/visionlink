@@ -19,12 +19,60 @@ import threading
 import time
 from typing import Any
 
+import os
+import numpy as np
+
 # Sentinels — special bytes values on spk_q
 MSG_SHUTDOWN = b"__VL_SHUTDOWN__"
 
 MIC_RATE = 16000
 SPEAKER_RATE = 24000
 BLOCK = 1600  # 100 ms at 16 kHz
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+# Gemini Live speech is dynamically quiet on this I2S amp/speaker chain. Drive
+# the signal harder, cap it safely, and write stereo so either I2S slot carries
+# the voice even if the MAX98357A channel wiring/slot changed.
+SPEAKER_GAIN = _env_float("AUDIO_SPEAKER_GAIN", 5.0)
+SPEAKER_LIMIT = max(0.50, min(0.98, _env_float("AUDIO_SPEAKER_LIMIT", 0.96)))
+SPEAKER_CHANNELS = 2 if _env_int("AUDIO_SPEAKER_CHANNELS", 2) != 1 else 1
+SPEAKER_LATENCY = os.getenv("AUDIO_SPEAKER_LATENCY", "high")
+
+
+def _prepare_speaker_chunk(chunk: bytes, output_channels: int) -> bytes:
+    """Boost mono S16 PCM and expand to the stream channel count."""
+    if len(chunk) < 2:
+        return b""
+    if len(chunk) % 2:
+        chunk = chunk[:-1]
+
+    samples = np.frombuffer(chunk, dtype=np.int16).astype(np.float32)
+    if samples.size == 0:
+        return b""
+
+    samples *= SPEAKER_GAIN
+    limit = 32767.0 * SPEAKER_LIMIT
+    samples = np.clip(samples, -limit, limit).astype(np.int16)
+
+    if output_channels == 2:
+        stereo = np.empty(samples.size * 2, dtype=np.int16)
+        stereo[0::2] = samples
+        stereo[1::2] = samples
+        return stereo.tobytes()
+    return samples.tobytes()
 
 
 def _err(msg: str) -> None:
@@ -54,6 +102,24 @@ def run(mic_q: Any, spk_q: Any) -> None:
                 return idx
         raise RuntimeError(f"audio device {name!r} not found in PortAudio enumeration")
 
+    def _open_speaker_stream(device_idx: int):
+        errors = []
+        for channels in (SPEAKER_CHANNELS, 1):
+            try:
+                stream = sd.RawOutputStream(
+                    samplerate=SPEAKER_RATE,
+                    channels=channels,
+                    dtype="int16",
+                    device=device_idx,
+                    latency=SPEAKER_LATENCY,
+                )
+                return stream, channels
+            except Exception as exc:
+                errors.append(f"{channels}ch={exc!r}")
+                if channels == 1:
+                    break
+        raise RuntimeError("speaker open failed: " + "; ".join(errors))
+
     try:
         mic_idx = _find_by_name("mic_left")
         spk_idx = _find_by_name("speaker")
@@ -62,13 +128,14 @@ def run(mic_q: Any, spk_q: Any) -> None:
             samplerate=MIC_RATE, channels=1, dtype="int16", blocksize=BLOCK,
             device=mic_idx,
         )
-        spk_stream = sd.RawOutputStream(
-            samplerate=SPEAKER_RATE, channels=1, dtype="int16",
-            device=spk_idx,
-        )
+        spk_stream, spk_channels = _open_speaker_stream(spk_idx)
         mic_stream.start()
         spk_stream.start()
-        _err(f"streams started — mic device #{mic_stream.device}, spk device #{spk_stream.device}")
+        _err(
+            f"streams started — mic device #{mic_stream.device}, "
+            f"spk device #{spk_stream.device}, spk_channels={spk_channels}, "
+            f"gain={SPEAKER_GAIN}, limit={SPEAKER_LIMIT}"
+        )
 
         # === DIAGNOSTIC: play a calibration tone at startup ===
         # Tells us if the speaker chain is at full volume independent of any
@@ -80,7 +147,9 @@ def run(mic_q: Any, spk_q: Any) -> None:
             for n in range(int(SPEAKER_RATE * 0.4)):
                 v = int(16384 * math.sin(2 * math.pi * 880 * n / SPEAKER_RATE))
                 tone_samples += struct.pack("<h", v)
-            spk_stream.write(bytes(tone_samples))
+            spk_stream.write(
+                _prepare_speaker_chunk(bytes(tone_samples), spk_channels)
+            )
             _err(f"calibration tone written ({len(tone_samples)} bytes, 880Hz, 0.4s)")
         except Exception as e:
             _err(f"calibration tone failed: {e!r}")
@@ -93,13 +162,14 @@ def run(mic_q: Any, spk_q: Any) -> None:
                 samplerate=MIC_RATE, channels=1, dtype="int16",
                 blocksize=BLOCK, device=default_idx,
             )
-            spk_stream = sd.RawOutputStream(
-                samplerate=SPEAKER_RATE, channels=1, dtype="int16",
-                device=default_idx,
-            )
+            spk_stream, spk_channels = _open_speaker_stream(default_idx)
             mic_stream.start()
             spk_stream.start()
-            _err(f"fallback to 'default' device #{default_idx} succeeded")
+            _err(
+                f"fallback to 'default' device #{default_idx} succeeded, "
+                f"spk_channels={spk_channels}, gain={SPEAKER_GAIN}, "
+                f"limit={SPEAKER_LIMIT}"
+            )
         except Exception as e2:
             _err(f"fallback also failed: {e2!r}")
             return
@@ -136,7 +206,7 @@ def run(mic_q: Any, spk_q: Any) -> None:
         if not chunk:
             continue
         try:
-            spk_stream.write(chunk)
+            spk_stream.write(_prepare_speaker_chunk(chunk, spk_channels))
         except Exception as e:
             _err(f"spk write error: {e}")
             stop_flag.set()

@@ -137,6 +137,21 @@
     .msg.user   .who { color: var(--warn); }
     .msg.gemini .who { color: var(--accent); }
     .msg.system .who { color: var(--muted); }
+    .msg.tool {
+      background: linear-gradient(90deg, rgba(60, 211, 159, 0.12), transparent);
+      border-left: 3px solid var(--good);
+      padding: 6px 10px;
+      margin: 6px 0;
+      border-radius: 4px;
+    }
+    .msg.tool .who { color: var(--good); font-weight: 700; letter-spacing: 0.08em; }
+    .msg.tool code {
+      color: var(--text);
+      background: var(--panel-2);
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
 
     .photo-wrap {
       position: relative;
@@ -169,6 +184,100 @@
     @media (max-width: 900px) {
       main { grid-template-columns: 1fr; padding: 16px; }
     }
+
+    /* ---------- Agent Settings modal ---------- */
+    .modal-backdrop {
+      position: fixed; inset: 0;
+      background: rgba(3, 6, 12, 0.78);
+      backdrop-filter: blur(4px);
+      display: none;
+      z-index: 100;
+    }
+    .modal-backdrop.open { display: block; }
+    .modal {
+      position: fixed;
+      top: 5vh; left: 50%; transform: translateX(-50%);
+      width: min(900px, 92vw);
+      max-height: 90vh;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+      display: flex; flex-direction: column;
+      z-index: 101;
+    }
+    .modal-header {
+      padding: 16px 22px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .modal-header h2 {
+      margin: 0; font-size: 14px; letter-spacing: 0.14em;
+      text-transform: uppercase; color: var(--text); font-weight: 700;
+    }
+    .modal-header h2 .accent { color: var(--accent); }
+    .modal-body {
+      overflow-y: auto;
+      padding: 18px 22px;
+      display: flex; flex-direction: column; gap: 22px;
+    }
+    .modal-footer {
+      padding: 14px 22px;
+      border-top: 1px solid var(--border);
+      display: flex; gap: 10px; justify-content: flex-end;
+      background: var(--panel-2);
+      border-radius: 0 0 14px 14px;
+    }
+    .field-group { display: flex; flex-direction: column; gap: 8px; }
+    .field-group label {
+      font-size: 11px; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--muted);
+    }
+    .field-group .help {
+      font-size: 11px; color: var(--muted); font-style: italic;
+    }
+    textarea.prompt {
+      width: 100%; min-height: 280px;
+      background: var(--panel-2);
+      border: 1px solid var(--border); border-radius: 8px;
+      color: var(--text);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 13px; line-height: 1.55;
+      padding: 12px; resize: vertical;
+    }
+    textarea.prompt:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .field-group select, .field-group input[type="number"] {
+      background: var(--panel-2);
+      border: 1px solid var(--border); border-radius: 8px;
+      color: var(--text); padding: 10px 12px; font-size: 13px;
+    }
+    .tool-card {
+      border: 1px solid var(--border);
+      border-radius: 8px; padding: 12px 14px;
+      background: var(--panel-2);
+    }
+    .tool-card .name {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 13px; color: var(--accent); font-weight: 700;
+    }
+    .tool-card .desc { font-size: 12.5px; color: var(--text); margin: 6px 0 8px; }
+    .tool-card pre {
+      margin: 0;
+      background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+      padding: 8px 10px; font-size: 11.5px; color: var(--muted);
+      overflow-x: auto;
+    }
+    .ro-row {
+      display: flex; gap: 14px; flex-wrap: wrap;
+      font-size: 12px; color: var(--muted);
+    }
+    .ro-row span b { color: var(--text); font-weight: 600; }
+    .save-status {
+      flex: 1; font-size: 12px; color: var(--muted); align-self: center;
+    }
+    .save-status.ok { color: var(--good); }
+    .save-status.err { color: var(--bad); }
   </style>
 </head>
 <body>
@@ -192,6 +301,7 @@
         <button id="btnSnap"  class="btn-ghost"   disabled>SNAP TO GEMINI</button>
         <button id="btnPhoto" class="btn-ghost">TAKE PHOTO</button>
         <button id="btnTone"  class="btn-ghost">TEST TONE</button>
+        <button id="btnAgent" class="btn-ghost">⚙ AGENT</button>
         <button id="btnClear" class="btn-ghost">CLEAR TRANSCRIPT</button>
       </div>
       <div class="lights">
@@ -222,6 +332,108 @@
       <div class="log" id="log"></div>
     </section>
   </main>
+
+  <div id="agentBackdrop" class="modal-backdrop">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="agentTitle">
+      <div class="modal-header">
+        <h2 id="agentTitle">AGENT <span class="accent">SETTINGS</span></h2>
+        <button id="agentClose" class="btn-ghost" style="padding:6px 12px;font-size:12px;">CLOSE</button>
+      </div>
+      <div class="modal-body">
+
+        <div class="field-group">
+          <label>Read-only</label>
+          <div class="ro-row">
+            <span><b>Model:</b> <code id="agentModel">—</code></span>
+            <span><b>Settings file:</b> <code id="agentSettingsPath">—</code></span>
+            <span><b>Live session:</b> <code id="agentLiveActive">—</code></span>
+          </div>
+          <div class="help">
+            Edits below are saved to disk and applied to the <b>next</b>
+            START LIVE click. The currently-running session keeps the config
+            it was started with.
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label>System Prompt</label>
+          <textarea id="agentSystemPrompt" class="prompt"
+            placeholder="What should Gemini act like? What are its rules? What tools must it call?"></textarea>
+          <div class="help">
+            Gemini's brain. Tells it who it is, when to call tools, and how
+            to speak. Reset button restores the prompt the project shipped with.
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label>Voice Activity Detection (VAD)</label>
+          <div class="grid-2">
+            <div class="field-group">
+              <label>Start sensitivity</label>
+              <select id="vadStart">
+                <option value="HIGH">HIGH (triggers easily)</option>
+                <option value="LOW">LOW (needs strong signal to start)</option>
+              </select>
+            </div>
+            <div class="field-group">
+              <label>End sensitivity</label>
+              <select id="vadEnd">
+                <option value="HIGH">HIGH (commits silence quickly)</option>
+                <option value="LOW">LOW (waits for sustained silence)</option>
+              </select>
+            </div>
+            <div class="field-group">
+              <label>Prefix padding (ms)</label>
+              <input id="vadPrefix" type="number" min="0" max="2000" step="50">
+            </div>
+            <div class="field-group">
+              <label>Silence duration (ms)</label>
+              <input id="vadSilence" type="number" min="0" max="3000" step="50">
+            </div>
+          </div>
+          <div class="help">
+            With our hot I2S mic, HIGH end-sensitivity + ~500ms silence works.
+            Drop end-sensitivity to LOW only if Gemini cuts you off mid-sentence.
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label>Audio</label>
+          <div class="grid-2">
+            <div class="field-group">
+              <label>Mic gain (×)</label>
+              <input id="micGain" type="number" min="0.1" max="20" step="0.5">
+            </div>
+            <div class="field-group">
+              <label>Speaker gain (×) — read-only</label>
+              <input id="spkGainRO" type="number" disabled value="3.0"
+                     style="opacity:0.5;">
+            </div>
+          </div>
+          <div class="help">
+            Mic gain compensates for the SPH0645's hot DC noise floor. 6× is
+            the validated sweet spot. Speaker gain lives in the audio worker
+            subprocess and isn't live-tunable yet.
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label>Tools (read-only)</label>
+          <div id="toolsList" style="display:flex;flex-direction:column;gap:10px;"></div>
+          <div class="help">
+            These are the functions Gemini may call. To change their code,
+            edit <code>src/ai/tools.py</code>.
+          </div>
+        </div>
+
+      </div>
+      <div class="modal-footer">
+        <span id="agentSaveStatus" class="save-status"></span>
+        <button id="agentReset" class="btn-ghost">RESET TO DEFAULTS</button>
+        <button id="agentSave"  class="btn-primary">SAVE</button>
+      </div>
+    </div>
+  </div>
 
   <script>
     const qs = (id) => document.getElementById(id);
@@ -346,6 +558,26 @@
           case 'transcript':
             onTranscript(data.role, data.text);
             break;
+          case 'tool_call': {
+            // GLARING green badge in the transcript so we always know
+            // when the agent ACTUALLY called a tool. If we don't see one,
+            // the agent is lying about completing actions.
+            const div = document.createElement('div');
+            div.className = 'msg tool';
+            const who = document.createElement('span');
+            who.className = 'who';
+            who.textContent = '🛠 tool fired';
+            div.appendChild(who);
+            const body = document.createElement('span');
+            const code = document.createElement('code');
+            code.textContent = `${data.name}(${JSON.stringify(data.args || {})})`;
+            body.appendChild(code);
+            div.appendChild(body);
+            transcript.appendChild(div);
+            transcript.scrollTop = transcript.scrollHeight;
+            appendLog('info', `tool fired: ${data.name}`);
+            break;
+          }
           case 'turn_complete':
             endTurn();
             break;
@@ -418,6 +650,139 @@
       transcript.innerHTML = '';
       currentTurn = { user: '', gemini: '' };
       currentNodes = { user: null, gemini: null };
+    });
+
+    /* ---------- Agent Settings modal ---------- */
+    const btnAgent = qs('btnAgent');
+    const agentBackdrop = qs('agentBackdrop');
+    const agentClose = qs('agentClose');
+    const agentSave  = qs('agentSave');
+    const agentReset = qs('agentReset');
+    const agentSaveStatus = qs('agentSaveStatus');
+    const agentSystemPrompt = qs('agentSystemPrompt');
+    const vadStart = qs('vadStart');
+    const vadEnd   = qs('vadEnd');
+    const vadPrefix = qs('vadPrefix');
+    const vadSilence = qs('vadSilence');
+    const micGain  = qs('micGain');
+    const toolsList = qs('toolsList');
+    const agentModel = qs('agentModel');
+    const agentSettingsPath = qs('agentSettingsPath');
+    const agentLiveActive = qs('agentLiveActive');
+    let defaultSystemPrompt = '';
+
+    function setSaveStatus(text, kind) {
+      agentSaveStatus.textContent = text || '';
+      agentSaveStatus.className = 'save-status' + (kind ? ' ' + kind : '');
+    }
+
+    function renderTools(tools) {
+      toolsList.innerHTML = '';
+      if (!tools || !tools.length) {
+        toolsList.innerHTML = '<div class="help">No tools configured.</div>';
+        return;
+      }
+      tools.forEach(t => {
+        const card = document.createElement('div');
+        card.className = 'tool-card';
+        const name = document.createElement('div');
+        name.className = 'name';
+        name.textContent = t.name;
+        const desc = document.createElement('div');
+        desc.className = 'desc';
+        desc.textContent = t.description || '';
+        const pre = document.createElement('pre');
+        pre.textContent = JSON.stringify(t.parameters || {}, null, 2);
+        card.appendChild(name);
+        card.appendChild(desc);
+        card.appendChild(pre);
+        toolsList.appendChild(card);
+      });
+    }
+
+    async function loadAgentSettings() {
+      setSaveStatus('Loading...');
+      try {
+        const r = await fetch('/api/agent/settings');
+        const d = await r.json();
+        agentModel.textContent = d.model || '';
+        agentSettingsPath.textContent = d.settings_path || '';
+        agentLiveActive.textContent = d.live_active ? 'YES' : 'no';
+        agentSystemPrompt.value = d.system_prompt || '';
+        defaultSystemPrompt = d.default_system_prompt || '';
+        if (d.vad) {
+          vadStart.value = d.vad.start_sensitivity || 'HIGH';
+          vadEnd.value   = d.vad.end_sensitivity || 'HIGH';
+          vadPrefix.value = d.vad.prefix_padding_ms;
+          vadSilence.value = d.vad.silence_duration_ms;
+        }
+        if (d.audio) {
+          micGain.value = d.audio.mic_gain;
+        }
+        renderTools(d.tools || []);
+        setSaveStatus('');
+      } catch (e) {
+        setSaveStatus('Failed to load: ' + e.message, 'err');
+      }
+    }
+
+    btnAgent.addEventListener('click', () => {
+      agentBackdrop.classList.add('open');
+      loadAgentSettings();
+    });
+
+    agentClose.addEventListener('click', () => {
+      agentBackdrop.classList.remove('open');
+    });
+
+    agentBackdrop.addEventListener('click', (e) => {
+      if (e.target === agentBackdrop) agentBackdrop.classList.remove('open');
+    });
+
+    agentReset.addEventListener('click', async () => {
+      if (!confirm('Reset agent settings to project defaults? This cannot be undone.')) return;
+      setSaveStatus('Resetting...');
+      try {
+        const r = await fetch('/api/agent/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reset: true }),
+        });
+        const d = await r.json();
+        if (d.error) throw new Error(d.error);
+        await loadAgentSettings();
+        setSaveStatus('Reset to defaults — applies on next START LIVE', 'ok');
+      } catch (e) {
+        setSaveStatus('Reset failed: ' + e.message, 'err');
+      }
+    });
+
+    agentSave.addEventListener('click', async () => {
+      const payload = {
+        system_prompt: agentSystemPrompt.value,
+        vad: {
+          start_sensitivity: vadStart.value,
+          end_sensitivity:   vadEnd.value,
+          prefix_padding_ms: parseInt(vadPrefix.value, 10),
+          silence_duration_ms: parseInt(vadSilence.value, 10),
+        },
+        audio: {
+          mic_gain: parseFloat(micGain.value),
+        },
+      };
+      setSaveStatus('Saving...');
+      try {
+        const r = await fetch('/api/agent/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const d = await r.json();
+        if (d.error) throw new Error(d.error);
+        setSaveStatus('Saved — applies on next START LIVE', 'ok');
+      } catch (e) {
+        setSaveStatus('Save failed: ' + e.message, 'err');
+      }
     });
   </script>
 </body>
