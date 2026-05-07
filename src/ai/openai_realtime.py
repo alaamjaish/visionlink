@@ -86,6 +86,12 @@ DEFAULT_OPENAI_SETTINGS: dict[str, Any] = {
     "system_prompt": DEFAULT_OPENAI_SYSTEM_PROMPT,
     "voice": DEFAULT_VOICE,
     "reasoning_effort": "low",   # minimal | low | medium | high
+    # Output playback speed multiplier (0.25 ≤ speed ≤ 1.5). Default 1.2
+    # because gpt-realtime-2's voices speak deliberately at 1.0 — fine for
+    # casual chat, sounds slow word-by-word in an industrial demo. 1.2 is
+    # noticeably snappier without sounding chipmunky. Crank to 1.3 / 1.4
+    # for even faster delivery via the AGENT settings panel.
+    "speed": 1.2,
     "vad": {
         "threshold": 0.5,
         "prefix_padding_ms": 300,
@@ -215,6 +221,8 @@ class OpenAISession:
 
         voice = self.settings.get("voice", DEFAULT_VOICE)
         reasoning_effort = self.settings.get("reasoning_effort", "low")
+        # Clamp speed to OpenAI's accepted range (0.25..1.5)
+        speed = max(0.25, min(1.5, float(self.settings.get("speed", 1.2))))
         instructions = self.settings.get(
             "system_prompt", DEFAULT_OPENAI_SYSTEM_PROMPT
         )
@@ -244,6 +252,7 @@ class OpenAISession:
                     "output": {
                         "format": {"type": "audio/pcm", "rate": 24000},
                         "voice": voice,
+                        "speed": speed,
                     },
                 },
                 "tools": build_openai_tools(),

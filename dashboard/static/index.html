@@ -621,6 +621,23 @@
           </div>
 
           <div class="field-group">
+            <label>Voice playback speed</label>
+            <div class="grid-2">
+              <div class="field-group">
+                <label>Speed (0.25..1.5)</label>
+                <input id="oaiSpeed" type="number" min="0.25" max="1.5" step="0.05">
+              </div>
+              <div></div>
+            </div>
+            <div class="help">
+              Default <b>1.2</b> — gpt-realtime-2's voices speak deliberately
+              at 1.0 (sounds slow word-by-word in industrial demos). 1.2 is
+              snappier without sounding chipmunky. Crank to 1.3-1.4 for very
+              fast delivery. Applies on the next START LIVE.
+            </div>
+          </div>
+
+          <div class="field-group">
             <label>Server VAD</label>
             <div class="grid-2">
               <div class="field-group">
@@ -1203,6 +1220,7 @@
     const openaiFields = qs('openaiFields');
     const oaiVoice     = qs('oaiVoice');
     const oaiReasoning = qs('oaiReasoning');
+    const oaiSpeed     = qs('oaiSpeed');
     const oaiVadThreshold = qs('oaiVadThreshold');
     const oaiVadPrefix    = qs('oaiVadPrefix');
     const oaiVadSilence   = qs('oaiVadSilence');
@@ -1271,6 +1289,7 @@
           agentApiKey.textContent = d.has_api_key ? 'YES ✓' : 'NO — add OPENAI_API_KEY to .env';
           oaiVoice.value = d.voice || 'marin';
           oaiReasoning.value = d.reasoning_effort || 'low';
+          oaiSpeed.value = d.speed ?? 1.2;
           if (d.vad) {
             oaiVadThreshold.value = d.vad.threshold ?? 0.5;
             oaiVadPrefix.value = d.vad.prefix_padding_ms ?? 300;
@@ -1339,6 +1358,7 @@
           system_prompt: agentSystemPrompt.value,
           voice: oaiVoice.value,
           reasoning_effort: oaiReasoning.value,
+          speed: parseFloat(oaiSpeed.value),
           vad: {
             threshold: parseFloat(oaiVadThreshold.value),
             prefix_padding_ms: parseInt(oaiVadPrefix.value, 10),

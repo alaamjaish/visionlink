@@ -1105,6 +1105,7 @@ async def oai_settings_get() -> JSONResponse:
             "reasoning_effort",
             DEFAULT_OPENAI_SETTINGS["reasoning_effort"],
         ),
+        "speed": s.get("speed", DEFAULT_OPENAI_SETTINGS["speed"]),
         "vad": s.get("vad", DEFAULT_OPENAI_SETTINGS["vad"]),
         "audio": s.get("audio", DEFAULT_OPENAI_SETTINGS["audio"]),
         "tools": describe_openai_tools(),
@@ -1139,6 +1140,14 @@ async def oai_settings_set(payload: dict) -> JSONResponse:
                     status_code=400,
                 )
             s["reasoning_effort"] = re_val
+        if "speed" in payload:
+            sp = float(payload["speed"])
+            if not (0.25 <= sp <= 1.5):
+                return JSONResponse(
+                    {"error": "speed must be 0.25..1.5"},
+                    status_code=400,
+                )
+            s["speed"] = sp
         if "vad" in payload and isinstance(payload["vad"], dict):
             v = s.setdefault("vad", dict(DEFAULT_OPENAI_SETTINGS["vad"]))
             if "threshold" in payload["vad"]:
