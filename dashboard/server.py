@@ -325,7 +325,11 @@ async def index() -> FileResponse:
 async def ws_endpoint(ws: WebSocket) -> None:
     await ws.accept()
     ws_clients.add(ws)
-    await ws.send_json({"type": "state", **state})
+    await ws.send_json({
+        "type": "state",
+        **state,
+        "sos_active_id": bh._state.sos_active_id,
+    })
     try:
         while True:
             # We only push; keep connection alive.

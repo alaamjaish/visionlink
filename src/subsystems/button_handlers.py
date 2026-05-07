@@ -435,9 +435,13 @@ async def b6_sos_trigger(
     bridge: Any,
     grab_jpeg: Callable[[], bytes],
 ) -> dict[str, Any]:
-    """B6 double-click — trigger SOS panic mode.
+    """B6 double-click — TOGGLE SOS panic mode.
 
-    What happens:
+    If no SOS is active: arm it (insert row, email, start streaming task).
+    If a SOS is already active: resolve it (the watcher in the running
+    task will see resolved=true within 2s and tear everything down).
+
+    What arming does:
       1. Insert sos_events row, store id in _state.sos_active_id
       2. Send alert email to wearable_settings.sos_alert_recipient_role
       3. Spawn the SOS task: starts an OpenAI Realtime session, auto-snaps
@@ -445,14 +449,27 @@ async def b6_sos_trigger(
       4. Watcher polls sos_events.resolved every 2 s — flips true → shut down
       5. Hard timeout from settings.sos_max_duration_s
     """
+    sb = _sb_client()
+
     async with _state_lock:
-        if _state.sos_active_id:
-            await log("🚨 SOS already active — ignoring", "warning")
-            return {"error": "sos_already_active", "id": _state.sos_active_id}
-        # No-op double-click ledger (we're inside the handler so trust it)
+        active_id = _state.sos_active_id
+
+    if active_id:
+        # SOS is currently armed — worker double-clicks B6 again to cancel.
+        # Flip the row; the running task's watcher polls every 2s and exits.
+        await log(f"🛑 SOS cancel-by-worker (id={active_id})", "info")
+        def _flip():
+            sb.table("sos_events").update({
+                "resolved": True,
+                "resolved_at": _now_iso(),
+                "resolved_by": "worker_cancel",
+                "reason": "Cancelled by worker via B6 double-click",
+            }).eq("id", active_id).execute()
+        await asyncio.to_thread(_flip)
+        await broadcast({"type": "sos_cancelling", "id": active_id})
+        return {"action": "cancelling", "id": active_id}
 
     settings = await load_wearable_settings()
-    sb = _sb_client()
 
     def _insert_sos():
         return sb.table("sos_events").insert({

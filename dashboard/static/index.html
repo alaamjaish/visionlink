@@ -401,7 +401,7 @@
         <div class="sim-btn b6" data-btn="6" data-gestures="single,double">
           <span class="num">B6 · GPIO 13</span>
           <span class="label">🆘 SOS</span>
-          <span class="gestures"><kbd>dbl click</kbd> arm panic mode</span>
+          <span class="gestures"><kbd>dbl click</kbd> arm · <kbd>dbl again</kbd> cancel</span>
         </div>
       </div>
       <div style="margin-top:14px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;">
@@ -788,6 +788,12 @@
             setLive(data.live_connected, data.mode);
             if (data.latest_photo) setPhoto(data.latest_photo);
             if (data.model) qs('modelTag').textContent = data.model;
+            // Reflect SOS state on the simulator if a panic mode is already armed
+            // server-side (e.g. user hard-refreshed mid-session).
+            setSimButtonState(6, 'armed', !!data.sos_active_id);
+            if (data.sos_active_id) {
+              appendLog('error', `🆘 SOS already armed (${data.sos_active_id.slice(0,8)}) — double-click B6 to cancel`);
+            }
             break;
           case 'log':
             appendLog(data.level || 'info', data.msg);
@@ -859,8 +865,12 @@
             break;
           case 'sos_armed':
             setSimButtonState(6, 'armed', true);
-            showToast('🆘 SOS PANIC MODE ARMED — supervisor alerted', 'bad');
+            showToast('🆘 SOS PANIC MODE ARMED — double-click B6 again to cancel', 'bad');
             appendLog('error', `🆘 SOS armed: ${data.id}`);
+            break;
+          case 'sos_cancelling':
+            showToast('🛑 Cancelling SOS — wearable will stop in ~2s');
+            appendLog('info', `🛑 SOS cancel requested: ${data.id}`);
             break;
           case 'sos_frame':
             appendLog('info', `🆘 SOS frame #${data.n} → ${data.path}`);
