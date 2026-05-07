@@ -642,10 +642,11 @@ async def _sos_run_session(
             try:
                 jpeg = await asyncio.to_thread(grab_jpeg)
                 frame_n += 1
-                # Upload to storage (audit trail) — don't block on it
+                # Upload to storage and wait so the ops dashboard's
+                # last_frame_path always points to a real file
                 ts = int(time.time() * 1000)
                 path = f"sos/{sos_id}/frame_{ts}.jpg"
-                asyncio.create_task(_upload_to_storage(path, jpeg, "image/jpeg"))
+                await _upload_to_storage(path, jpeg, "image/jpeg")
                 # Inject into OpenAI session if alive
                 if session and session.connection is not None:
                     try:
@@ -656,11 +657,18 @@ async def _sos_run_session(
                         )
                     except Exception as e:
                         print(f"[sos] send_image fail: {e!r}", flush=True)
-                # Update frames_sent counter
+                # Update frames_sent counter + last frame path for live display
                 def _bump():
-                    sb.table("sos_events").update({
-                        "frames_sent": frame_n,
-                    }).eq("id", sos_id).execute()
+                    try:
+                        sb.table("sos_events").update({
+                            "frames_sent": frame_n,
+                            "last_frame_path": path,
+                        }).eq("id", sos_id).execute()
+                    except Exception:
+                        # column may not exist (migration pending)
+                        sb.table("sos_events").update({
+                            "frames_sent": frame_n,
+                        }).eq("id", sos_id).execute()
                 await asyncio.to_thread(_bump)
                 await broadcast({
                     "type": "sos_frame",
@@ -860,12 +868,22 @@ async def _sos_run_session_gemini(
                 jpeg = await asyncio.to_thread(grab_jpeg)
                 ts = int(time.time() * 1000)
                 path = f"sos/{sos_id}/frame_{ts}.jpg"
-                asyncio.create_task(_upload_to_storage(path, jpeg, "image/jpeg"))
-                # Bump frames_sent counter
+                # Wait for upload so last_frame_path points to a real file
+                await _upload_to_storage(path, jpeg, "image/jpeg")
+                # Bump frames_sent counter + the latest frame path so the
+                # ops dashboard shows the new image live
                 def _bump():
-                    sb.table("sos_events").update({
-                        "frames_sent": frame_n,
-                    }).eq("id", sos_id).execute()
+                    try:
+                        sb.table("sos_events").update({
+                            "frames_sent": frame_n,
+                            "last_frame_path": path,
+                        }).eq("id", sos_id).execute()
+                    except Exception:
+                        # last_frame_path column may not exist yet (migration
+                        # not applied) — fall back to just bumping the counter
+                        sb.table("sos_events").update({
+                            "frames_sent": frame_n,
+                        }).eq("id", sos_id).execute()
                 await asyncio.to_thread(_bump)
                 await broadcast({
                     "type": "sos_frame",

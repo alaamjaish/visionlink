@@ -137,4 +137,5 @@ export type SosEvent = {
   frames_sent: number;
   email_sent: boolean;
   notes: string | null;
+  last_frame_path: string | null;
 };
