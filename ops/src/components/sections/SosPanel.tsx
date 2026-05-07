@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Btn, Pill, Modal, Textarea } from "@/components/Panel";
 import { useRealtimeRows } from "@/lib/useRealtimeRows";
+import { useCollapsed } from "@/lib/useCollapsed";
 import { supabase } from "@/lib/supabase";
 import type { SosEvent } from "@/lib/types";
 
@@ -92,10 +93,13 @@ export function SosPanel() {
   const [resolverName, setResolverName] = useState("Supervisor");
   const [resolving, setResolving] = useState(false);
   const [muted, setMuted] = useState(false);
+  const [collapsed, toggleCollapsed] = useCollapsed("sos", false);
 
   const open = useMemo(() => rows.filter((r) => !r.resolved), [rows]);
   const armed = open.length > 0;
 
+  // Audio alarm keeps running even when collapsed — visual hide doesn't
+  // mean "ignore the emergency"
   useSosAlarm(armed, muted);
 
   async function shutdown(ev: SosEvent) {
@@ -144,23 +148,30 @@ export function SosPanel() {
       {/* HEADER — much bigger when armed */}
       <div
         className={
-          "flex items-center justify-between mb-4 " +
-          (armed ? "flex-wrap gap-3" : "")
+          "flex items-center justify-between gap-3 " +
+          (collapsed ? "" : "mb-4 ") +
+          (armed ? "flex-wrap" : "")
         }
       >
         {armed ? (
           <>
-            <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={toggleCollapsed}
+              className="flex items-center gap-3 cursor-pointer text-left bg-transparent border-0 p-0"
+              aria-expanded={!collapsed}
+            >
+              <span className="text-[var(--muted)] text-sm">{collapsed ? "▸" : "▾"}</span>
               <span className="sos-blink text-4xl">🆘</span>
               <div>
                 <div className="text-[var(--bad)] font-extrabold tracking-[0.18em] uppercase text-xl leading-tight">
                   SOS PANIC MODE ACTIVE
                 </div>
                 <div className="text-[12px] text-[var(--muted)] mt-1">
-                  {open.length} active alert{open.length === 1 ? "" : "s"} · supervisor must respond
+                  {open.length} active alert{open.length === 1 ? "" : "s"} · {collapsed ? "click to expand" : "supervisor must respond"}
                 </div>
               </div>
-            </div>
+            </button>
             <div className="flex items-center gap-2">
               <Btn variant="ghost" onClick={() => setMuted((v) => !v)}>
                 {muted ? "🔔 UNMUTE ALARM" : "🔕 MUTE ALARM"}
@@ -168,23 +179,31 @@ export function SosPanel() {
             </div>
           </>
         ) : (
-          <h2 className="text-[11px] tracking-[0.14em] uppercase text-[var(--muted)] m-0 font-semibold">
-            🆘 SOS Panic Mode <Pill tone="muted">idle</Pill>
-          </h2>
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            className="flex items-center gap-2 cursor-pointer bg-transparent border-0 p-0 text-left"
+            aria-expanded={!collapsed}
+          >
+            <span className="text-[var(--muted)] text-sm">{collapsed ? "▸" : "▾"}</span>
+            <h2 className="text-[11px] tracking-[0.14em] uppercase text-[var(--muted)] m-0 font-semibold">
+              🆘 SOS Panic Mode <Pill tone="muted">idle</Pill>
+            </h2>
+          </button>
         )}
       </div>
 
-      {loading && (
+      {!collapsed && loading && (
         <div className="text-[13px] text-[var(--muted)]">Loading SOS events...</div>
       )}
 
-      {!loading && rows.length === 0 && (
+      {!collapsed && !loading && rows.length === 0 && (
         <div className="text-[13px] text-[var(--muted)]">
           No SOS events yet. Worker can double-click B6 to trigger.
         </div>
       )}
 
-      <div className="flex flex-col gap-4">
+      <div className={"flex flex-col gap-4 " + (collapsed ? "hidden" : "")}>
         {rows.map((r) => {
           const isFlash = flashIds.has(r.id);
           const isOpen = !r.resolved;

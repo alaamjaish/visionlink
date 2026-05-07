@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Btn, Pill, Select, Input } from "@/components/Panel";
+import { useCollapsed } from "@/lib/useCollapsed";
 import { supabase } from "@/lib/supabase";
 import type { WearableSettings } from "@/lib/types";
 
@@ -21,6 +22,7 @@ export function WearableSettingsPanel() {
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [collapsed, toggleCollapsed] = useCollapsed("wearable-settings", false);
 
   useEffect(() => {
     let alive = true;
@@ -103,21 +105,32 @@ export function WearableSettingsPanel() {
 
   return (
     <section className="bg-[var(--panel)] border border-[var(--border)] rounded-xl p-5">
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-[11px] tracking-[0.14em] uppercase text-[var(--muted)] m-0 font-semibold">
-          Wearable Settings <Pill tone="accent">remote config</Pill>
-        </h2>
+      <div className={"flex items-center justify-between gap-3 " + (collapsed ? "" : "mb-3")}>
+        <button
+          type="button"
+          onClick={toggleCollapsed}
+          className="flex items-center gap-2 cursor-pointer bg-transparent border-0 p-0 text-left"
+          aria-expanded={!collapsed}
+        >
+          <span className="text-[var(--muted)] text-sm">{collapsed ? "▸" : "▾"}</span>
+          <h2 className="text-[11px] tracking-[0.14em] uppercase text-[var(--muted)] m-0 font-semibold">
+            Wearable Settings <Pill tone="accent">remote config</Pill>
+          </h2>
+        </button>
         <div className="flex items-center gap-2">
           {savedAt && (
             <span className="text-[10.5px] text-[var(--good)]">
               saved {savedAt}
             </span>
           )}
-          <Btn variant="primary" onClick={save} disabled={saving}>
-            {saving ? "SAVING..." : "SAVE"}
-          </Btn>
+          {!collapsed && (
+            <Btn variant="primary" onClick={save} disabled={saving}>
+              {saving ? "SAVING..." : "SAVE"}
+            </Btn>
+          )}
         </div>
       </div>
+      <div className={collapsed ? "hidden" : ""}>
       <p className="text-[12px] text-[var(--muted)] mb-4">
         These settings are read by the wearable on every button press.
         Changes propagate within ~200&nbsp;ms via Supabase realtime — no
@@ -189,6 +202,7 @@ export function WearableSettingsPanel() {
           Save failed: {error}
         </div>
       )}
+      </div>
     </section>
   );
 }
