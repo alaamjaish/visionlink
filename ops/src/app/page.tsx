@@ -7,6 +7,8 @@ import { ComponentsPanel } from "@/components/sections/ComponentsPanel";
 import { ManagersPanel } from "@/components/sections/ManagersPanel";
 import { ReportTemplatesPanel } from "@/components/sections/ReportTemplatesPanel";
 import { SentReportsPanel } from "@/components/sections/SentReportsPanel";
+import { SosPanel } from "@/components/sections/SosPanel";
+import { WearableSettingsPanel } from "@/components/sections/WearableSettingsPanel";
 
 export default function CommandCenter() {
   return (
@@ -19,7 +21,11 @@ export default function CommandCenter() {
         </p>
       </div>
 
-      <div className="text-[10.5px] tracking-[0.14em] uppercase text-[var(--muted)] mt-2">Operations</div>
+      <div className="text-[10.5px] tracking-[0.14em] uppercase text-[var(--muted)] mt-2">Wearable</div>
+      <SosPanel />
+      <WearableSettingsPanel />
+
+      <div className="text-[10.5px] tracking-[0.14em] uppercase text-[var(--muted)] mt-4">Operations</div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <IncidentsPanel />
         <TasksPanel />

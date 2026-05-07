@@ -86,3 +86,54 @@ export type PartRequest = {
   requested_at: string;
   status: "submitted" | "approved" | "shipped" | "delivered";
 };
+
+// ---------- 6-button system + SOS panic mode ----------
+
+export type WearableSettings = {
+  id: "current";
+  b4_provider: "gemini" | "openai";
+  b5_provider: "gemini" | "openai";
+  b5_vision_mode: "snap_on_press" | "gemini_video" | "auto_snap_4s";
+  sos_photo_interval_s: number;
+  sos_max_duration_s: number;
+  sos_alert_recipient_role: string;
+  worker_id: string;
+  worker_name: string;
+  updated_at: string;
+};
+
+export type Session = {
+  id: string;
+  worker_id: string;
+  worker_name: string | null;
+  label: string | null;
+  started_at: string;
+  ended_at: string | null;
+  status: "open" | "closed";
+};
+
+export type SessionAsset = {
+  id: string;
+  session_id: string | null;
+  worker_id: string;
+  kind: "photo" | "video" | "voice_note";
+  storage_path: string;
+  captured_at: string;
+  duration_s: number | null;
+  notes: string | null;
+};
+
+export type SosEvent = {
+  id: string;
+  worker_id: string;
+  worker_name: string | null;
+  triggered_at: string;
+  resolved_at: string | null;
+  resolved_by: string | null;
+  resolved: boolean;
+  reason: string | null;
+  live_transcript: string;
+  frames_sent: number;
+  email_sent: boolean;
+  notes: string | null;
+};

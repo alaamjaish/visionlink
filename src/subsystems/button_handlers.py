@@ -1,0 +1,696 @@
+"""Six button handlers — the SINGLE source of truth for what each
+physical (or on-screen) button does on the VisionLink wearable.
+
+Both the FastAPI dashboard endpoints (/api/button/{n}/{event}) and the
+future GPIO callbacks in main.py invoke these functions. New behavior
+goes here, not in the GPIO or dashboard layers.
+
+Button map (matches 7TH_MAY_UPDATE.md, with B5/B6 updated 2026-05-08):
+  B1 single  → toggle documentation session (start or close)
+  B2 single  → take photo (added to open session if any)
+  B2 double  → record a short video clip (~5s)
+  B3 hold    → record voice note (start on press, upload on release)
+  B4 single  → start AI session (audio-only, provider from wearable_settings)
+  B5 single  → start AI session with vision (provider+vision_mode from settings)
+  B6 single  → no-op (warn — SOS requires double-click)
+  B6 double  → trigger SOS panic mode
+
+State lives at module scope and is accessed via thread-safe asyncio
+primitives. The handlers are async; callers create_task them.
+"""
+from __future__ import annotations
+
+import asyncio
+import io
+import os
+import time
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Awaitable, Callable, Optional
+
+from supabase import Client, create_client
+
+
+# ---------- module-level state (single-process, single-wearable) ----------
+
+@dataclass
+class _ButtonState:
+    """Tracks what the wearable is currently doing across button presses."""
+    open_session_id: Optional[str] = None
+    open_session_label: Optional[str] = None
+    voice_note_recording: bool = False
+    voice_note_buffer: bytearray = field(default_factory=bytearray)
+    voice_note_started_at: float = 0.0
+    voice_note_task: Optional[asyncio.Task] = None
+    last_b6_single_at: float = 0.0       # for double-click detection
+    sos_active_id: Optional[str] = None  # set while a SOS session is running
+    sos_task: Optional[asyncio.Task] = None
+
+
+_state = _ButtonState()
+_state_lock = asyncio.Lock()
+
+
+# ---------- Supabase client ----------
+
+_sb: Optional[Client] = None
+
+
+def _sb_client() -> Client:
+    global _sb
+    if _sb is None:
+        url = os.getenv("SUPABASE_URL", "").strip()
+        key = os.getenv("SUPABASE_SERVICE_KEY", "").strip()
+        if not url or not key:
+            raise RuntimeError("SUPABASE_URL / SUPABASE_SERVICE_KEY missing in .env")
+        _sb = create_client(url, key)
+    return _sb
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+# ---------- shared helpers ----------
+
+async def load_wearable_settings() -> dict[str, Any]:
+    """Fetch the singleton wearable_settings row. Falls back to defaults
+    if the row is missing or Supabase is unreachable."""
+    defaults = {
+        "id": "current",
+        "b4_provider": "openai",
+        "b5_provider": "openai",
+        "b5_vision_mode": "snap_on_press",
+        "sos_photo_interval_s": 4,
+        "sos_max_duration_s": 600,
+        "sos_alert_recipient_role": "safety officer",
+        "worker_id": os.getenv("WORKER_ID", "demo_worker_001"),
+        "worker_name": os.getenv("WORKER_NAME", "Alaa"),
+    }
+    try:
+        sb = _sb_client()
+        def _q():
+            return (sb.table("wearable_settings")
+                      .select("*")
+                      .eq("id", "current")
+                      .limit(1)
+                      .execute())
+        r = await asyncio.to_thread(_q)
+        if r.data:
+            return {**defaults, **r.data[0]}
+    except Exception as e:
+        print(f"[buttons] settings load failed: {e!r} — using defaults", flush=True)
+    return defaults
+
+
+async def _upload_to_storage(
+    path: str, data: bytes, content_type: str = "application/octet-stream"
+) -> str:
+    """Upload bytes to the session-assets bucket. Returns the storage path."""
+    sb = _sb_client()
+    def _up():
+        sb.storage.from_("session-assets").upload(
+            path,
+            data,
+            {"content-type": content_type, "upsert": "true"},
+        )
+    await asyncio.to_thread(_up)
+    return path
+
+
+# ============================================================
+# B1 — toggle documentation session
+# ============================================================
+
+async def b1_doc_session_toggle(
+    log: Callable[[str, str], Awaitable[None]],
+    broadcast: Callable[[dict[str, Any]], Awaitable[None]],
+) -> dict[str, Any]:
+    settings = await load_wearable_settings()
+    sb = _sb_client()
+    async with _state_lock:
+        if _state.open_session_id:
+            sid = _state.open_session_id
+            def _close():
+                sb.table("sessions").update({
+                    "ended_at": _now_iso(),
+                    "status": "closed",
+                }).eq("id", sid).execute()
+            await asyncio.to_thread(_close)
+            _state.open_session_id = None
+            _state.open_session_label = None
+            await log(f"📁 Documentation session closed", "info")
+            await broadcast({"type": "session_closed", "session_id": sid})
+            return {"action": "closed", "session_id": sid}
+        else:
+            label = datetime.now().strftime("Session %Y-%m-%d %H:%M")
+            def _open():
+                return sb.table("sessions").insert({
+                    "worker_id":   settings["worker_id"],
+                    "worker_name": settings["worker_name"],
+                    "label":       label,
+                    "status":      "open",
+                }).execute()
+            r = await asyncio.to_thread(_open)
+            sid = r.data[0]["id"] if r.data else None
+            _state.open_session_id = sid
+            _state.open_session_label = label
+            await log(f"📁 Documentation session opened — {label}", "info")
+            await broadcast({"type": "session_opened", "session_id": sid, "label": label})
+            return {"action": "opened", "session_id": sid, "label": label}
+
+
+# ============================================================
+# B2 single — take photo
+# ============================================================
+
+async def b2_take_photo(
+    log: Callable[[str, str], Awaitable[None]],
+    broadcast: Callable[[dict[str, Any]], Awaitable[None]],
+    grab_jpeg: Callable[[], bytes],
+) -> dict[str, Any]:
+    """Capture one JPEG and store it. If a doc session is open, attach;
+    else file under '_orphan/'.
+
+    `grab_jpeg` is provided by the dashboard so we can re-use the open
+    SessionCamera (if any) instead of taking a fresh picamera2 lock.
+    """
+    settings = await load_wearable_settings()
+    jpeg = await asyncio.to_thread(grab_jpeg)
+    ts = int(time.time() * 1000)
+    sid = _state.open_session_id
+    folder = sid or "_orphan"
+    path = f"{folder}/photo_{ts}.jpg"
+    await _upload_to_storage(path, jpeg, "image/jpeg")
+    sb = _sb_client()
+    def _ins():
+        sb.table("session_assets").insert({
+            "session_id":   sid,
+            "worker_id":    settings["worker_id"],
+            "kind":         "photo",
+            "storage_path": path,
+            "duration_s":   None,
+        }).execute()
+    await asyncio.to_thread(_ins)
+    await log(f"📷 photo saved → {path} ({len(jpeg)} bytes)", "info")
+    await broadcast({"type": "photo_saved", "path": path, "session_id": sid})
+    return {"ok": True, "path": path, "bytes": len(jpeg), "session_id": sid}
+
+
+# ============================================================
+# B2 double — short video clip
+# ============================================================
+
+async def b2_record_video(
+    log: Callable[[str, str], Awaitable[None]],
+    broadcast: Callable[[dict[str, Any]], Awaitable[None]],
+    duration_s: float = 5.0,
+) -> dict[str, Any]:
+    """Record a short MP4 via the existing capture_av_mp4.sh helper, then
+    upload it. Synchronous-ish — the simulator click waits ~duration_s."""
+    project_root = Path(__file__).resolve().parent.parent.parent
+    script = project_root / "scripts" / "capture_av_mp4.sh"
+    if not script.exists():
+        await log("capture_av_mp4.sh missing — video disabled", "error")
+        return {"error": "video script missing"}
+
+    settings = await load_wearable_settings()
+    sid = _state.open_session_id
+    folder = sid or "_orphan"
+    ts = int(time.time() * 1000)
+    out_path = f"/tmp/vl_video_{ts}.mp4"
+    cmd = ["bash", str(script), out_path, str(duration_s)]
+    await log(f"🎥 recording {duration_s}s video...", "info")
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, err = await proc.communicate()
+    if proc.returncode != 0:
+        await log(f"video capture failed: {err.decode(errors='replace')}", "error")
+        return {"error": "video capture failed"}
+
+    try:
+        with open(out_path, "rb") as f:
+            data = f.read()
+    finally:
+        try: os.unlink(out_path)
+        except OSError: pass
+
+    storage_path = f"{folder}/video_{ts}.mp4"
+    await _upload_to_storage(storage_path, data, "video/mp4")
+    sb = _sb_client()
+    def _ins():
+        sb.table("session_assets").insert({
+            "session_id":   sid,
+            "worker_id":    settings["worker_id"],
+            "kind":         "video",
+            "storage_path": storage_path,
+            "duration_s":   duration_s,
+        }).execute()
+    await asyncio.to_thread(_ins)
+    await log(f"🎥 video saved → {storage_path} ({len(data)} bytes)", "info")
+    await broadcast({"type": "video_saved", "path": storage_path, "session_id": sid})
+    return {"ok": True, "path": storage_path, "bytes": len(data), "duration_s": duration_s}
+
+
+# ============================================================
+# B3 — voice note (hold to record, release to upload)
+# ============================================================
+
+async def b3_voice_note_start(
+    log: Callable[[str, str], Awaitable[None]],
+    bridge: Any,   # AudioBridge — duck-typed to avoid circular import
+) -> dict[str, Any]:
+    async with _state_lock:
+        if _state.voice_note_recording:
+            return {"already_recording": True}
+        _state.voice_note_recording = True
+        _state.voice_note_buffer = bytearray()
+        _state.voice_note_started_at = time.time()
+
+    await log("🎙 voice note recording... (release to stop)", "info")
+
+    async def _capture_loop():
+        try:
+            while _state.voice_note_recording:
+                try:
+                    block = await bridge.read_mic_block()
+                    _state.voice_note_buffer.extend(block)
+                except Exception as e:
+                    print(f"[b3] mic read err: {e}", flush=True)
+                    await asyncio.sleep(0.1)
+        except asyncio.CancelledError:
+            pass
+
+    _state.voice_note_task = asyncio.create_task(_capture_loop())
+    return {"recording": True}
+
+
+async def b3_voice_note_end(
+    log: Callable[[str, str], Awaitable[None]],
+    broadcast: Callable[[dict[str, Any]], Awaitable[None]],
+) -> dict[str, Any]:
+    async with _state_lock:
+        if not _state.voice_note_recording:
+            return {"not_recording": True}
+        _state.voice_note_recording = False
+        task = _state.voice_note_task
+        _state.voice_note_task = None
+        buf = bytes(_state.voice_note_buffer)
+        _state.voice_note_buffer = bytearray()
+        started = _state.voice_note_started_at
+
+    if task:
+        task.cancel()
+        try: await task
+        except asyncio.CancelledError: pass
+
+    duration_s = time.time() - started
+    if len(buf) < 1600:  # less than 50 ms — ignore
+        await log("🎙 voice note too short — discarded", "info")
+        return {"too_short": True, "duration_s": duration_s}
+
+    # Wrap raw 16k S16 mono PCM in a WAV header
+    wav = _pcm_to_wav(buf, sample_rate=16000, channels=1)
+    settings = await load_wearable_settings()
+    sid = _state.open_session_id
+    folder = sid or "_orphan"
+    ts = int(time.time() * 1000)
+    path = f"{folder}/voice_{ts}.wav"
+    await _upload_to_storage(path, wav, "audio/wav")
+    sb = _sb_client()
+    def _ins():
+        sb.table("session_assets").insert({
+            "session_id":   sid,
+            "worker_id":    settings["worker_id"],
+            "kind":         "voice_note",
+            "storage_path": path,
+            "duration_s":   round(duration_s, 2),
+        }).execute()
+    await asyncio.to_thread(_ins)
+    await log(f"🎙 voice note saved → {path} ({duration_s:.1f}s, {len(wav)} bytes)", "info")
+    await broadcast({"type": "voice_note_saved", "path": path, "duration_s": duration_s})
+    return {"ok": True, "path": path, "duration_s": duration_s}
+
+
+def _pcm_to_wav(pcm: bytes, sample_rate: int = 16000, channels: int = 1) -> bytes:
+    """Wrap raw int16 PCM in a WAV header so the file plays in browsers."""
+    import struct
+    bits = 16
+    byte_rate = sample_rate * channels * bits // 8
+    block_align = channels * bits // 8
+    data_size = len(pcm)
+    riff_size = 36 + data_size
+    header = b"RIFF" + struct.pack("<I", riff_size) + b"WAVE"
+    header += b"fmt " + struct.pack("<IHHIIHH",
+        16, 1, channels, sample_rate, byte_rate, block_align, bits,
+    )
+    header += b"data" + struct.pack("<I", data_size)
+    return header + pcm
+
+
+# ============================================================
+# B4 / B5 — start AI session (audio / audio+vision)
+# ============================================================
+#
+# These are thin wrappers — actual session start is done by the
+# dashboard via the `ai_starter` callable, because the session
+# lifecycle (task, current_session refs, camera) lives there.
+
+async def b4_ai_voice_only(
+    log: Callable[[str, str], Awaitable[None]],
+    ai_starter: Callable[[str, str, bool], Awaitable[dict[str, Any]]],
+) -> dict[str, Any]:
+    """Start the audio-only AI session using the provider configured
+    in wearable_settings.b4_provider."""
+    settings = await load_wearable_settings()
+    provider = settings["b4_provider"]
+    await log(f"🤖 B4 → starting AI ({provider}) audio-only session", "info")
+    return await ai_starter(provider, "audio", False)
+
+
+async def b5_ai_voice_vision(
+    log: Callable[[str, str], Awaitable[None]],
+    ai_starter: Callable[[str, str, bool], Awaitable[dict[str, Any]]],
+) -> dict[str, Any]:
+    """Start an AI session with vision per wearable_settings.b5_*."""
+    settings = await load_wearable_settings()
+    provider = settings["b5_provider"]
+    vision_mode = settings["b5_vision_mode"]   # snap_on_press | gemini_video | auto_snap_4s
+    # Map vision_mode + provider into the existing session 'mode' arg
+    if provider == "gemini" and vision_mode == "gemini_video":
+        gemini_mode = "video"
+    elif provider == "gemini":
+        gemini_mode = "snap"   # gemini supports snap-on-press in 'snap' mode
+    else:
+        gemini_mode = "audio"  # OpenAI uses audio mode + image injection
+    await log(
+        f"👁 B5 → AI ({provider}, vision={vision_mode}) starting", "info"
+    )
+    return await ai_starter(provider, gemini_mode, True)
+
+
+# ============================================================
+# B6 — single = warn, double = SOS panic mode
+# ============================================================
+
+DOUBLE_CLICK_WINDOW_S = 0.8
+
+async def b6_warn_single(
+    log: Callable[[str, str], Awaitable[None]],
+    broadcast: Callable[[dict[str, Any]], Awaitable[None]],
+) -> dict[str, Any]:
+    """Single click on B6 — refuses to trigger SOS, asks for double-click."""
+    _state.last_b6_single_at = time.time()
+    await log("⚠ B6 single click — DOUBLE-click to trigger SOS panic mode", "info")
+    await broadcast({
+        "type": "b6_warn",
+        "msg": "Double-click required to arm SOS panic mode",
+    })
+    return {"warning": "double-click required for SOS"}
+
+
+async def b6_sos_trigger(
+    log: Callable[[str, str], Awaitable[None]],
+    broadcast: Callable[[dict[str, Any]], Awaitable[None]],
+    bridge: Any,
+    grab_jpeg: Callable[[], bytes],
+) -> dict[str, Any]:
+    """B6 double-click — trigger SOS panic mode.
+
+    What happens:
+      1. Insert sos_events row, store id in _state.sos_active_id
+      2. Send alert email to wearable_settings.sos_alert_recipient_role
+      3. Spawn the SOS task: starts an OpenAI Realtime session, auto-snaps
+         photos every N seconds, streams transcript to sos_events.live_transcript
+      4. Watcher polls sos_events.resolved every 2 s — flips true → shut down
+      5. Hard timeout from settings.sos_max_duration_s
+    """
+    async with _state_lock:
+        if _state.sos_active_id:
+            await log("🚨 SOS already active — ignoring", "warning")
+            return {"error": "sos_already_active", "id": _state.sos_active_id}
+        # No-op double-click ledger (we're inside the handler so trust it)
+
+    settings = await load_wearable_settings()
+    sb = _sb_client()
+
+    def _insert_sos():
+        return sb.table("sos_events").insert({
+            "worker_id":   settings["worker_id"],
+            "worker_name": settings["worker_name"],
+            "notes":       "Triggered by double-click on B6",
+        }).execute()
+    r = await asyncio.to_thread(_insert_sos)
+    sos_id = r.data[0]["id"] if r.data else str(uuid.uuid4())
+    async with _state_lock:
+        _state.sos_active_id = sos_id
+
+    await log(f"🆘 SOS PANIC MODE ARMED — id={sos_id}", "error")
+    await broadcast({"type": "sos_armed", "id": sos_id})
+
+    # Fire-and-forget alert email (don't block on it)
+    asyncio.create_task(_sos_send_alert_email(sos_id, settings, sb))
+
+    # Spawn the long-running SOS controller task
+    task = asyncio.create_task(_sos_run_session(
+        sos_id=sos_id,
+        settings=settings,
+        log=log,
+        broadcast=broadcast,
+        bridge=bridge,
+        grab_jpeg=grab_jpeg,
+    ))
+    async with _state_lock:
+        _state.sos_task = task
+
+    return {"ok": True, "sos_id": sos_id}
+
+
+async def _sos_send_alert_email(
+    sos_id: str, settings: dict[str, Any], sb: Client
+) -> None:
+    """Use the existing send_report tool to email the safety officer."""
+    try:
+        from src.ai.tools import handle_send_report
+        result = await handle_send_report({
+            "recipient_role": settings["sos_alert_recipient_role"],
+            "report_name":    "incident report",
+            "custom_message": (
+                f"🆘 SOS PANIC MODE TRIGGERED by {settings['worker_name']} "
+                f"(worker_id={settings['worker_id']}). Live frames + "
+                f"transcript streaming to ops dashboard. SOS ID: {sos_id}."
+            ),
+        })
+        ok = bool(result.get("ok"))
+        def _mark():
+            sb.table("sos_events").update({
+                "email_sent": ok,
+                "notes": f"alert email: {result}",
+            }).eq("id", sos_id).execute()
+        await asyncio.to_thread(_mark)
+    except Exception as e:
+        print(f"[sos] email alert failed: {e!r}", flush=True)
+
+
+async def _sos_run_session(
+    sos_id: str,
+    settings: dict[str, Any],
+    log: Callable[[str, str], Awaitable[None]],
+    broadcast: Callable[[dict[str, Any]], Awaitable[None]],
+    bridge: Any,
+    grab_jpeg: Callable[[], bytes],
+) -> None:
+    """The actual SOS loop. Concurrently:
+      - runs an OpenAI Realtime session so the agent speaks calmly to the worker
+      - injects a fresh camera frame every photo_interval_s
+      - watches sos_events.resolved (poll every 2s) and shuts down when true
+      - enforces a hard timeout
+
+    Cleans up state when the loop exits.
+    """
+    from src.ai.openai_realtime import OpenAISession, DEFAULT_OPENAI_SETTINGS
+
+    sb = _sb_client()
+    photo_interval = max(1, int(settings.get("sos_photo_interval_s", 4)))
+    max_duration   = max(30, int(settings.get("sos_max_duration_s", 600)))
+
+    # SOS-specific system prompt: calm, reassuring, situationally aware
+    sos_settings = dict(DEFAULT_OPENAI_SETTINGS)
+    sos_settings["system_prompt"] = (
+        f"You are VisionLink in EMERGENCY mode. {settings['worker_name']} just "
+        f"triggered an SOS. Your job: reassure them out loud, ask short "
+        f"questions ('Are you injured? Where are you? What happened?'), "
+        f"describe whatever you can see in their camera frames, and tell them "
+        f"help is on the way. Speak calmly, slowly, in 1-2 short sentences at "
+        f"a time. Do NOT call any tools right now — focus on reassurance. "
+        f"The supervisor will arrive shortly."
+    )
+    sos_settings["voice"] = "marin"  # warm voice for emergency
+
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        await log("🆘 OPENAI_API_KEY missing — SOS will run photo-only", "error")
+
+    # Build an OpenAISession with our SOS settings if key is present
+    session: Optional[OpenAISession] = None
+
+    async def _on_transcript_update(text_delta: str) -> None:
+        """Append agent transcript to sos_events.live_transcript so the
+        supervisor sees what the wearable is saying."""
+        try:
+            def _update():
+                # Read-modify-write — race is fine for streaming text
+                row = (sb.table("sos_events")
+                         .select("live_transcript")
+                         .eq("id", sos_id)
+                         .limit(1)
+                         .execute())
+                cur = row.data[0]["live_transcript"] if row.data else ""
+                sb.table("sos_events").update({
+                    "live_transcript": cur + text_delta,
+                }).eq("id", sos_id).execute()
+            await asyncio.to_thread(_update)
+        except Exception as e:
+            print(f"[sos] transcript update fail: {e!r}", flush=True)
+
+    # Wrap the dashboard's broadcast so we also forward agent transcripts
+    async def _wrapped_broadcast(event: dict[str, Any]) -> None:
+        await broadcast(event)
+        if event.get("type") == "transcript" and event.get("role") == "openai":
+            await _on_transcript_update(event.get("text", ""))
+
+    if api_key:
+        session = OpenAISession(
+            api_key=api_key,
+            bridge=bridge,
+            settings=sos_settings,
+            broadcast=_wrapped_broadcast,
+            log=log,
+            dlog=lambda *a, **kw: None,
+        )
+
+    async def session_runner() -> None:
+        if session is None:
+            return
+        try:
+            await session.run()
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            await log(f"🆘 SOS OpenAI session ended: {e}", "error")
+
+    async def auto_snap_loop() -> None:
+        await asyncio.sleep(2.0)  # let the session connect first
+        frame_n = 0
+        while True:
+            try:
+                jpeg = await asyncio.to_thread(grab_jpeg)
+                frame_n += 1
+                # Upload to storage (audit trail) — don't block on it
+                ts = int(time.time() * 1000)
+                path = f"sos/{sos_id}/frame_{ts}.jpg"
+                asyncio.create_task(_upload_to_storage(path, jpeg, "image/jpeg"))
+                # Inject into OpenAI session if alive
+                if session and session.connection is not None:
+                    try:
+                        await session.send_image(
+                            jpeg,
+                            prompt=("Live SOS frame. Describe briefly if you "
+                                    "see anything noteworthy."),
+                        )
+                    except Exception as e:
+                        print(f"[sos] send_image fail: {e!r}", flush=True)
+                # Update frames_sent counter
+                def _bump():
+                    sb.table("sos_events").update({
+                        "frames_sent": frame_n,
+                    }).eq("id", sos_id).execute()
+                await asyncio.to_thread(_bump)
+                await broadcast({
+                    "type": "sos_frame",
+                    "sos_id": sos_id,
+                    "n": frame_n,
+                    "path": path,
+                })
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                print(f"[sos] auto-snap loop err: {e!r}", flush=True)
+            await asyncio.sleep(photo_interval)
+
+    async def resolution_watcher() -> None:
+        """Poll sos_events.resolved every 2 s. Returns when supervisor flips it."""
+        while True:
+            await asyncio.sleep(2.0)
+            try:
+                def _check():
+                    return (sb.table("sos_events")
+                              .select("resolved,resolved_by,reason")
+                              .eq("id", sos_id)
+                              .limit(1)
+                              .execute())
+                r = await asyncio.to_thread(_check)
+                if r.data and r.data[0].get("resolved"):
+                    await log(
+                        f"🛑 SOS resolved by {r.data[0].get('resolved_by') or '?'}"
+                        f" ({r.data[0].get('reason') or '—'})",
+                        "info",
+                    )
+                    return
+            except Exception as e:
+                print(f"[sos] watcher err: {e!r}", flush=True)
+
+    try:
+        # Race the watcher against the hard timeout
+        watcher_task = asyncio.create_task(resolution_watcher())
+        snap_task    = asyncio.create_task(auto_snap_loop())
+        session_task = asyncio.create_task(session_runner())
+
+        try:
+            await asyncio.wait_for(watcher_task, timeout=max_duration)
+        except asyncio.TimeoutError:
+            await log(f"🆘 SOS hit max duration ({max_duration}s) — auto-stopping", "warning")
+            def _auto_resolve():
+                sb.table("sos_events").update({
+                    "resolved": True,
+                    "resolved_at": _now_iso(),
+                    "resolved_by": "auto_timeout",
+                    "reason": f"max duration {max_duration}s reached",
+                }).eq("id", sos_id).execute()
+            await asyncio.to_thread(_auto_resolve)
+
+        # Tear down side tasks
+        for t in (snap_task, session_task, watcher_task):
+            t.cancel()
+        for t in (snap_task, session_task, watcher_task):
+            try: await t
+            except asyncio.CancelledError: pass
+            except Exception: pass
+
+    finally:
+        # Mark resolved_at if the supervisor's update didn't include it
+        def _final():
+            cur = (sb.table("sos_events")
+                     .select("resolved_at")
+                     .eq("id", sos_id)
+                     .limit(1)
+                     .execute())
+            if cur.data and not cur.data[0].get("resolved_at"):
+                sb.table("sos_events").update({
+                    "resolved_at": _now_iso(),
+                }).eq("id", sos_id).execute()
+        try:
+            await asyncio.to_thread(_final)
+        except Exception:
+            pass
+
+        async with _state_lock:
+            _state.sos_active_id = None
+            _state.sos_task = None
+        await broadcast({"type": "sos_ended", "sos_id": sos_id})
+        await log("🆘 SOS panic mode ended", "info")

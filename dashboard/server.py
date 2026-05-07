@@ -43,6 +43,7 @@ from src.ai.openai_realtime import (
     save_openai_settings,
 )
 from src.ai.openai_tools import describe_openai_tools
+from src.subsystems import button_handlers as bh
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -1095,3 +1096,100 @@ async def oai_settings_set(payload: dict) -> JSONResponse:
         })
     except (ValueError, TypeError) as e:
         return JSONResponse({"error": f"bad payload: {e}"}, status_code=400)
+
+
+# ============================================================
+# 6-button simulator — single source of truth for button behavior
+# ============================================================
+#
+# Each /api/button/{n}/{event} fires the matching coroutine in
+# src/subsystems/button_handlers.py. The same handlers will be
+# bound to GPIO callbacks once we go physical.
+
+def _grab_jpeg_for_buttons() -> bytes:
+    """Capture a JPEG using the open SessionCamera if available, else
+    take a transient picamera2 lock. Sync — call via to_thread."""
+    import io as _io
+    if current_camera is not None:
+        return current_camera.grab_jpeg()
+    if oai_camera is not None:
+        return oai_camera.grab_jpeg()
+    from picamera2 import Picamera2
+    cam = Picamera2()
+    cfg = cam.create_still_configuration(main={"size": (1024, 576)})
+    cam.configure(cfg)
+    cam.start()
+    time.sleep(0.4)
+    buf = _io.BytesIO()
+    cam.capture_file(buf, format="jpeg")
+    cam.close()
+    return buf.getvalue()
+
+
+async def _button_ai_starter(provider: str, mode: str, camera: bool) -> dict[str, Any]:
+    """Start an AI session of the given provider — used by B4 / B5."""
+    global live_task, oai_task
+
+    # Refuse if any session is already running — pick a winner
+    if (live_task and not live_task.done()) or (oai_task and not oai_task.done()):
+        return {"error": "session already running — STOP first"}
+
+    if provider == "openai":
+        if not OPENAI_API_KEY:
+            return {"error": "OPENAI_API_KEY missing"}
+        oai_task = asyncio.create_task(_run_oai_session_task(camera))
+        return {"started": "openai", "camera": camera}
+    elif provider == "gemini":
+        if not API_KEY:
+            return {"error": "GEMINI_API_KEY missing"}
+        gemini_mode = mode if mode in ("audio", "snap", "video") else "audio"
+        live_task = asyncio.create_task(run_live_session(mode=gemini_mode))
+        return {"started": "gemini", "mode": gemini_mode}
+    return {"error": f"unknown provider {provider!r}"}
+
+
+@app.post("/api/button/{n}/{event}")
+async def button_dispatch(n: int, event: str) -> JSONResponse:
+    """Fire the handler for (button n, event). Single source of truth.
+    Same surface GPIO callbacks will use later."""
+    bridge = get_bridge()
+
+    async def _run(coro_factory):
+        try:
+            return await coro_factory()
+        except Exception as e:
+            traceback.print_exc()
+            await log(f"button {n}/{event} error: {e}", "error")
+            return {"error": str(e)}
+
+    if (n, event) == (1, "single"):
+        result = await _run(lambda: bh.b1_doc_session_toggle(log, broadcast))
+    elif (n, event) == (2, "single"):
+        result = await _run(lambda: bh.b2_take_photo(
+            log, broadcast,
+            grab_jpeg=lambda: _grab_jpeg_for_buttons(),
+        ))
+    elif (n, event) == (2, "double"):
+        result = await _run(lambda: bh.b2_record_video(log, broadcast))
+    elif (n, event) == (3, "hold_start"):
+        result = await _run(lambda: bh.b3_voice_note_start(log, bridge))
+    elif (n, event) == (3, "hold_end"):
+        result = await _run(lambda: bh.b3_voice_note_end(log, broadcast))
+    elif (n, event) == (4, "single"):
+        result = await _run(lambda: bh.b4_ai_voice_only(log, _button_ai_starter))
+    elif (n, event) == (5, "single"):
+        result = await _run(lambda: bh.b5_ai_voice_vision(log, _button_ai_starter))
+    elif (n, event) == (6, "single"):
+        result = await _run(lambda: bh.b6_warn_single(log, broadcast))
+    elif (n, event) == (6, "double"):
+        result = await _run(lambda: bh.b6_sos_trigger(
+            log, broadcast,
+            bridge=bridge,
+            grab_jpeg=lambda: _grab_jpeg_for_buttons(),
+        ))
+    else:
+        return JSONResponse(
+            {"error": f"no handler for button {n}/{event}"}, status_code=404
+        )
+
+    return JSONResponse({"button": n, "event": event, "result": result})

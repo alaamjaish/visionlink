@@ -279,6 +279,76 @@
     }
     .save-status.ok { color: var(--good); }
     .save-status.err { color: var(--bad); }
+
+    /* ---------- 6-button simulator ---------- */
+    .sim-grid {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 12px;
+    }
+    @media (max-width: 900px) {
+      .sim-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+    .sim-btn {
+      display: flex; flex-direction: column; align-items: stretch;
+      gap: 6px;
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 10px 10px;
+      cursor: pointer;
+      user-select: none;
+      transition: border-color 0.12s, transform 0.08s, box-shadow 0.15s;
+      position: relative;
+    }
+    .sim-btn:hover { border-color: var(--accent); }
+    .sim-btn:active { transform: scale(0.98); }
+    .sim-btn.armed { box-shadow: 0 0 0 2px var(--accent); }
+    .sim-btn .num {
+      font-size: 11px; color: var(--muted); letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+    .sim-btn .label {
+      font-size: 13px; font-weight: 700; color: var(--text);
+      letter-spacing: 0.04em;
+    }
+    .sim-btn .gestures {
+      font-size: 10.5px; color: var(--muted); line-height: 1.4;
+    }
+    .sim-btn .gestures b { color: var(--text); font-weight: 600; }
+    .sim-btn.b6 { border-color: rgba(255, 90, 106, 0.55); background: linear-gradient(180deg, rgba(255,90,106,0.07), var(--panel-2)); }
+    .sim-btn.b6:hover { border-color: var(--bad); }
+    .sim-btn.recording { border-color: var(--warn); box-shadow: 0 0 0 2px var(--warn); }
+    .sim-btn.session-open { border-color: var(--good); box-shadow: 0 0 0 1px var(--good); }
+    .sim-btn .gestures kbd {
+      display: inline-block;
+      padding: 0 5px; font-size: 10px;
+      background: var(--bg);
+      border: 1px solid var(--border); border-radius: 3px;
+      font-family: ui-monospace, monospace;
+      color: var(--text);
+    }
+    .sim-warn-toast {
+      position: fixed;
+      top: 18px; left: 50%; transform: translateX(-50%);
+      background: var(--warn); color: #1a0d00;
+      padding: 10px 18px;
+      border-radius: 8px; font-size: 13px; font-weight: 700;
+      letter-spacing: 0.04em; box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+      z-index: 200; opacity: 0; pointer-events: none;
+      transition: opacity 0.2s;
+    }
+    .sim-warn-toast.show { opacity: 1; }
+    .sim-warn-toast.bad { background: var(--bad); color: #fff5f5; }
+    .debug-toggle {
+      font-size: 10.5px; color: var(--muted);
+      letter-spacing: 0.12em; text-transform: uppercase;
+      display: inline-flex; align-items: center; gap: 6px;
+      cursor: pointer;
+    }
+    .debug-toggle input { accent-color: var(--accent); }
+    #debugSection { display: none; }
+    #debugSection.shown { display: block; }
   </style>
 </head>
 <body>
@@ -289,38 +359,80 @@
 
   <main>
     <section class="panel controls">
-      <h2>Controls</h2>
-      <div class="mode-row" style="margin-bottom:10px;">
-        <span style="font-size:12px;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase;margin-right:12px;">PROVIDER</span>
-        <label class="mode-opt"><input type="radio" name="provider" value="gemini" checked> 🟡 Gemini Live <span class="hint">(gemini-3.1-flash-live-preview)</span></label>
-        <label class="mode-opt"><input type="radio" name="provider" value="openai"> 🟢 OpenAI Realtime <span class="hint">(gpt-realtime-2 — new)</span></label>
+      <h2>6-Button Simulator <span style="font-size:10.5px;color:var(--muted);font-weight:400;margin-left:10px;">(single source of truth — same handlers GPIO will call)</span></h2>
+      <div class="sim-grid" id="simGrid">
+        <div class="sim-btn" data-btn="1" data-gestures="single">
+          <span class="num">B1 · GPIO 17</span>
+          <span class="label">📁 DOC SESSION</span>
+          <span class="gestures"><kbd>click</kbd> toggle session</span>
+        </div>
+        <div class="sim-btn" data-btn="2" data-gestures="single,double">
+          <span class="num">B2 · GPIO 27</span>
+          <span class="label">📷 CAM</span>
+          <span class="gestures"><kbd>click</kbd> photo · <kbd>dbl</kbd> 5s video</span>
+        </div>
+        <div class="sim-btn" data-btn="3" data-gestures="hold">
+          <span class="num">B3 · GPIO 22</span>
+          <span class="label">🎙 VOICE NOTE</span>
+          <span class="gestures"><kbd>hold</kbd> record · release upload</span>
+        </div>
+        <div class="sim-btn" data-btn="4" data-gestures="single">
+          <span class="num">B4 · GPIO 5</span>
+          <span class="label">🤖 AGENT</span>
+          <span class="gestures"><kbd>click</kbd> talk to agent</span>
+        </div>
+        <div class="sim-btn" data-btn="5" data-gestures="single">
+          <span class="num">B5 · GPIO 6</span>
+          <span class="label">👁 AGENT + EYES</span>
+          <span class="gestures"><kbd>click</kbd> show + ask</span>
+        </div>
+        <div class="sim-btn b6" data-btn="6" data-gestures="single,double">
+          <span class="num">B6 · GPIO 13</span>
+          <span class="label">🆘 SOS</span>
+          <span class="gestures"><kbd>dbl click</kbd> arm panic mode</span>
+        </div>
       </div>
-      <div class="mode-row" id="geminiModeRow" style="margin-bottom:12px;">
-        <span style="font-size:12px;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase;margin-right:12px;">MODE</span>
-        <label class="mode-opt"><input type="radio" name="mode" value="audio" checked> Audio only <span class="hint">(15 min cap)</span></label>
-        <label class="mode-opt"><input type="radio" name="mode" value="snap"> Audio + Snap <span class="hint">(send one photo on demand)</span></label>
-        <label class="mode-opt"><input type="radio" name="mode" value="video"> Audio + Live Video <span class="hint">(1 fps, 2 min cap)</span></label>
+      <div style="margin-top:14px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;">
+        <label class="debug-toggle">
+          <input type="checkbox" id="debugToggle"> 🔧 Debug override
+        </label>
+        <button id="btnAgent" class="btn-ghost" style="padding:6px 14px;font-size:11.5px;">⚙ AGENT SETTINGS</button>
+        <button id="btnClear" class="btn-ghost" style="padding:6px 14px;font-size:11.5px;">CLEAR TRANSCRIPT</button>
+        <button id="btnTone"  class="btn-ghost" style="padding:6px 14px;font-size:11.5px;">TEST TONE</button>
       </div>
-      <div class="mode-row" id="openaiModeRow" style="margin-bottom:12px;display:none;">
-        <span class="hint" style="font-size:11.5px;">OpenAI accepts a single image at any time during the session — no separate mode needed. Click <b>📷 SNAP &amp; ASK</b> while live to send the camera feed.</span>
+
+      <div id="debugSection" style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px;">
+        <div class="mode-row" style="margin-bottom:10px;">
+          <span style="font-size:11px;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase;margin-right:12px;">PROVIDER (debug override)</span>
+          <label class="mode-opt"><input type="radio" name="provider" value="gemini" checked> 🟡 Gemini Live</label>
+          <label class="mode-opt"><input type="radio" name="provider" value="openai"> 🟢 OpenAI Realtime</label>
+        </div>
+        <div class="mode-row" id="geminiModeRow" style="margin-bottom:10px;">
+          <span style="font-size:11px;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase;margin-right:12px;">MODE</span>
+          <label class="mode-opt"><input type="radio" name="mode" value="audio" checked> Audio only</label>
+          <label class="mode-opt"><input type="radio" name="mode" value="snap"> Audio + Snap</label>
+          <label class="mode-opt"><input type="radio" name="mode" value="video"> Audio + Live Video</label>
+        </div>
+        <div class="mode-row" id="openaiModeRow" style="margin-bottom:12px;display:none;">
+          <span class="hint" style="font-size:11.5px;">OpenAI accepts a single image at any time during the session.</span>
+        </div>
+        <div class="btn-row">
+          <button id="btnStart" class="btn-primary">START LIVE</button>
+          <button id="btnStop"  class="btn-danger"  disabled>STOP</button>
+          <button id="btnSnap"  class="btn-ghost"   disabled>📷 SNAP &amp; ASK</button>
+          <button id="btnPhoto" class="btn-ghost">TAKE PHOTO</button>
+        </div>
       </div>
-      <div class="btn-row">
-        <button id="btnStart" class="btn-primary">START LIVE</button>
-        <button id="btnStop"  class="btn-danger"  disabled>STOP</button>
-        <button id="btnSnap"  class="btn-ghost"   disabled>📷 SNAP &amp; ASK</button>
-        <button id="btnPhoto" class="btn-ghost">TAKE PHOTO</button>
-        <button id="btnTone"  class="btn-ghost">TEST TONE</button>
-        <button id="btnAgent" class="btn-ghost">⚙ AGENT</button>
-        <button id="btnClear" class="btn-ghost">CLEAR TRANSCRIPT</button>
-      </div>
+
       <div class="lights">
         <div class="light"><span class="dot" id="dotWs"></span>   WebSocket</div>
-        <div class="light"><span class="dot" id="dotLive"></span> <span id="liveLabel">Gemini Live</span></div>
+        <div class="light"><span class="dot" id="dotLive"></span> <span id="liveLabel">Live</span></div>
         <div class="light"><span class="dot" id="dotTurn"></span> Turn</div>
-        <div class="light"><span class="dot" id="dotVideo"></span> Video streaming</div>
+        <div class="light"><span class="dot" id="dotVideo"></span> Video</div>
         <div class="light" id="modeLabel" style="margin-left:auto;">mode: audio</div>
       </div>
     </section>
+    <div id="simWarnToast" class="sim-warn-toast"></div>
 
     <section class="panel">
       <h2>Live Transcript</h2>
@@ -710,6 +822,39 @@
           case 'photo':
             setPhoto(data.url);
             break;
+          case 'session_opened':
+            setSimButtonState(1, 'session-open', true);
+            appendLog('info', `📁 doc session opened: ${data.label || data.session_id}`);
+            break;
+          case 'session_closed':
+            setSimButtonState(1, 'session-open', false);
+            appendLog('info', `📁 doc session closed`);
+            break;
+          case 'photo_saved':
+            appendLog('info', `📷 photo saved → ${data.path}`);
+            break;
+          case 'video_saved':
+            appendLog('info', `🎥 video saved → ${data.path}`);
+            break;
+          case 'voice_note_saved':
+            appendLog('info', `🎙 voice note saved (${data.duration_s?.toFixed?.(1) || '?'}s) → ${data.path}`);
+            break;
+          case 'b6_warn':
+            showToast(data.msg || 'Double-click required', 'bad');
+            break;
+          case 'sos_armed':
+            setSimButtonState(6, 'armed', true);
+            showToast('🆘 SOS PANIC MODE ARMED — supervisor alerted', 'bad');
+            appendLog('error', `🆘 SOS armed: ${data.id}`);
+            break;
+          case 'sos_frame':
+            appendLog('info', `🆘 SOS frame #${data.n} → ${data.path}`);
+            break;
+          case 'sos_ended':
+            setSimButtonState(6, 'armed', false);
+            showToast('🆘 SOS resolved');
+            appendLog('info', `🆘 SOS ended: ${data.sos_id}`);
+            break;
         }
       };
     }
@@ -787,9 +932,104 @@
 
     btnClear.addEventListener('click', () => {
       transcript.innerHTML = '';
-      currentTurn = { user: '', gemini: '' };
-      currentNodes = { user: null, gemini: null };
+      currentTurn = { user: '', gemini: '', openai: '' };
+      currentNodes = { user: null, gemini: null, openai: null };
     });
+
+    /* ---------- 6-button simulator ---------- */
+    const debugToggle = qs('debugToggle');
+    const debugSection = qs('debugSection');
+    const simWarnToast = qs('simWarnToast');
+
+    debugToggle.addEventListener('change', () => {
+      debugSection.classList.toggle('shown', debugToggle.checked);
+    });
+
+    function showToast(msg, kind) {
+      simWarnToast.textContent = msg;
+      simWarnToast.className = 'sim-warn-toast show' + (kind ? ' ' + kind : '');
+      clearTimeout(showToast._t);
+      showToast._t = setTimeout(() => {
+        simWarnToast.classList.remove('show');
+      }, 2400);
+    }
+
+    async function fireButton(n, event) {
+      appendLog('info', `B${n} → ${event}`);
+      try {
+        const r = await fetch(`/api/button/${n}/${encodeURIComponent(event)}`, { method: 'POST' });
+        const d = await r.json();
+        if (d?.result?.error) {
+          showToast(`B${n}: ${d.result.error}`, 'bad');
+          appendLog('error', `B${n} ${event}: ${d.result.error}`);
+        } else if (d?.result?.warning) {
+          showToast(d.result.warning);
+        }
+        return d;
+      } catch (e) {
+        showToast(`B${n} request failed`, 'bad');
+        appendLog('error', `B${n} ${event} fetch: ${e.message}`);
+      }
+    }
+
+    /* Wire each .sim-btn for click / dblclick / hold based on its data-gestures. */
+    document.querySelectorAll('.sim-btn').forEach(el => {
+      const n = parseInt(el.dataset.btn, 10);
+      const gestures = (el.dataset.gestures || '').split(',');
+
+      // Hold gestures: mousedown/mouseup → hold_start/hold_end
+      if (gestures.includes('hold')) {
+        let holdActive = false;
+        const start = (e) => {
+          e.preventDefault();
+          if (holdActive) return;
+          holdActive = true;
+          el.classList.add('recording');
+          fireButton(n, 'hold_start');
+        };
+        const end = (e) => {
+          if (!holdActive) return;
+          holdActive = false;
+          el.classList.remove('recording');
+          fireButton(n, 'hold_end');
+        };
+        el.addEventListener('mousedown', start);
+        el.addEventListener('touchstart', start, { passive: false });
+        el.addEventListener('mouseup', end);
+        el.addEventListener('mouseleave', end);
+        el.addEventListener('touchend', end);
+        return;
+      }
+
+      // Click + double-click handling (defer single-click 350ms if double registered)
+      const hasDouble = gestures.includes('double');
+      let clickTimer = null;
+      el.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (!hasDouble) {
+          fireButton(n, 'single');
+          return;
+        }
+        if (clickTimer) {
+          clearTimeout(clickTimer);
+          clickTimer = null;
+          fireButton(n, 'double');
+          el.classList.add('armed');
+          setTimeout(() => el.classList.remove('armed'), 600);
+        } else {
+          clickTimer = setTimeout(() => {
+            clickTimer = null;
+            fireButton(n, 'single');
+          }, 350);
+        }
+      });
+    });
+
+    // Reflect session/SOS state on the buttons
+    function setSimButtonState(n, cls, on) {
+      const el = document.querySelector(`.sim-btn[data-btn="${n}"]`);
+      if (el) el.classList.toggle(cls, !!on);
+    }
 
     /* ---------- Agent Settings modal ---------- */
     const btnAgent = qs('btnAgent');
