@@ -315,6 +315,14 @@
     .sim-btn .gestures {
       font-size: 10.5px; color: var(--muted); line-height: 1.4;
     }
+    .sim-btn .effective {
+      font-size: 10px;
+      color: var(--accent);
+      letter-spacing: 0.06em;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      margin-top: 2px;
+    }
+    .sim-btn .effective b { color: var(--good); font-weight: 700; }
     .sim-btn .gestures b { color: var(--text); font-weight: 600; }
     .sim-btn.b6 { border-color: rgba(255, 90, 106, 0.55); background: linear-gradient(180deg, rgba(255,90,106,0.07), var(--panel-2)); }
     .sim-btn.b6:hover { border-color: var(--bad); }
@@ -392,16 +400,19 @@
           <span class="num">B4 · GPIO 5</span>
           <span class="label">🤖 AGENT</span>
           <span class="gestures"><kbd>click</kbd> talk · <kbd>dbl</kbd> stop</span>
+          <span class="effective" id="b4Effective">→ <b>—</b></span>
         </div>
         <div class="sim-btn" data-btn="5" data-gestures="single,double">
           <span class="num">B5 · GPIO 6</span>
           <span class="label">👁 AGENT + EYES</span>
           <span class="gestures"><kbd>click</kbd> show & ask (auto-snaps) · <kbd>dbl</kbd> stop</span>
+          <span class="effective" id="b5Effective">→ <b>—</b></span>
         </div>
         <div class="sim-btn b6" data-btn="6" data-gestures="single,double">
           <span class="num">B6 · GPIO 13</span>
           <span class="label">🆘 SOS</span>
           <span class="gestures"><kbd>dbl click</kbd> arm · <kbd>dbl again</kbd> cancel</span>
+          <span class="effective" id="b6Effective">→ <b>—</b></span>
         </div>
       </div>
       <div style="margin-top:14px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;">
@@ -671,6 +682,10 @@
     let currentTurn = { user: '', gemini: '', openai: '' };
     let currentNodes = { user: null, gemini: null, openai: null };
 
+    // Track whether B6 SOS is armed — when true, the live_state event
+    // is owned by SOS and B4/B5 should NOT visually light up as armed.
+    let sosArmed = false;
+
     function appendMsg(role, text, kind = role) {
       const div = document.createElement('div');
       div.className = `msg ${kind}`;
@@ -790,7 +805,8 @@
             if (data.model) qs('modelTag').textContent = data.model;
             // Reflect SOS state on the simulator if a panic mode is already armed
             // server-side (e.g. user hard-refreshed mid-session).
-            setSimButtonState(6, 'armed', !!data.sos_active_id);
+            sosArmed = !!data.sos_active_id;
+            setSimButtonState(6, 'armed', sosArmed);
             if (data.sos_active_id) {
               appendLog('error', `🆘 SOS already armed (${data.sos_active_id.slice(0,8)}) — double-click B6 to cancel`);
             }
@@ -800,9 +816,18 @@
             break;
           case 'live_state':
             setLive(data.connected, data.mode || currentMode);
-            // Visually mark B4 + B5 as armed-and-ready-to-stop while AI session lives
-            setSimButtonState(4, 'ai-live', !!data.connected);
-            setSimButtonState(5, 'ai-live', !!data.connected);
+            // Mark B4 + B5 as armed-and-ready-to-stop while AI session lives —
+            // BUT only when SOS is NOT the one running it. SOS uses the same
+            // session machinery, so without this gate B6 SOS would also light
+            // up B4 and B5 (which would be misleading).
+            if (!sosArmed) {
+              setSimButtonState(4, 'ai-live', !!data.connected);
+              setSimButtonState(5, 'ai-live', !!data.connected);
+            } else {
+              // Make sure B4/B5 stay clean while SOS owns the session
+              setSimButtonState(4, 'ai-live', false);
+              setSimButtonState(5, 'ai-live', false);
+            }
             break;
           case 'transcript':
             onTranscript(data.role, data.text);
@@ -864,7 +889,11 @@
             showToast(data.msg || 'Double-click required', 'bad');
             break;
           case 'sos_armed':
+            sosArmed = true;
             setSimButtonState(6, 'armed', true);
+            // Force-clear B4/B5 visual state — SOS owns the session now
+            setSimButtonState(4, 'ai-live', false);
+            setSimButtonState(5, 'ai-live', false);
             showToast('🆘 SOS PANIC MODE ARMED — double-click B6 again to cancel', 'bad');
             appendLog('error', `🆘 SOS armed: ${data.id}`);
             break;
@@ -876,6 +905,7 @@
             appendLog('info', `🆘 SOS frame #${data.n} → ${data.path}`);
             break;
           case 'sos_ended':
+            sosArmed = false;
             setSimButtonState(6, 'armed', false);
             showToast('🆘 SOS resolved');
             appendLog('info', `🆘 SOS ended: ${data.sos_id}`);
@@ -1051,6 +1081,26 @@
       const el = document.querySelector(`.sim-btn[data-btn="${n}"]`);
       if (el) el.classList.toggle(cls, !!on);
     }
+
+    // ---------- Show current effective provider per button ----------
+    async function refreshEffectiveSettings() {
+      try {
+        const r = await fetch('/api/wearable/settings');
+        const s = await r.json();
+        const fmt = p => p === 'openai' ? '🟢 <b>OpenAI</b>'
+                       : p === 'gemini' ? '🟡 <b>Gemini</b>'
+                       : '<b>—</b>';
+        qs('b4Effective').innerHTML = '→ ' + fmt(s.b4_provider);
+        qs('b5Effective').innerHTML = '→ ' + fmt(s.b5_provider) + ' · ' + (s.b5_vision_mode || 'snap_on_press');
+        qs('b6Effective').innerHTML = '→ ' + fmt(s.sos_provider) + ' · every ' + (s.sos_photo_interval_s || 10) + 's';
+      } catch (e) {
+        // Silently ignore — we'll try again next time
+      }
+    }
+    refreshEffectiveSettings();
+    // Poll once per minute so changes from the ops dashboard surface here
+    // (no Supabase realtime subscription on this side).
+    setInterval(refreshEffectiveSettings, 60000);
 
     /* ---------- Agent Settings modal ---------- */
     const btnAgent = qs('btnAgent');

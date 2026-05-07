@@ -865,6 +865,18 @@ async def agent_settings_set(payload: dict) -> JSONResponse:
         return JSONResponse({"error": f"bad payload: {e}"}, status_code=400)
 
 
+@app.get("/api/wearable/settings")
+async def wearable_settings_get() -> JSONResponse:
+    """Returns the current wearable_settings row as the wearable sees it.
+
+    Use this from the voice command center to display "B4 → Gemini" etc.
+    so the worker can confirm what provider each button will fire BEFORE
+    pressing it. Falls back to Python defaults if Supabase is unreachable.
+    """
+    s = await bh.load_wearable_settings()
+    return JSONResponse(s)
+
+
 @app.get("/api/health")
 async def health() -> JSONResponse:
     return JSONResponse({
