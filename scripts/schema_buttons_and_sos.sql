@@ -119,6 +119,18 @@ alter table sessions          disable row level security;
 alter table session_assets    disable row level security;
 alter table sos_events        disable row level security;
 
+-- ------------------------------------------------------------
+-- 6b. Explicit grants for the browser (anon) + authenticated roles.
+--     CRITICAL: when tables are created via the SQL editor (vs the
+--     Supabase Table Editor UI), they don't get auto-granted to anon.
+--     Without this block, the ops dashboard sees zero rows even when
+--     RLS is disabled — which is silent and confusing. Don't skip.
+-- ------------------------------------------------------------
+grant select, insert, update, delete on wearable_settings to anon, authenticated;
+grant select, insert, update, delete on sessions          to anon, authenticated;
+grant select, insert, update, delete on session_assets    to anon, authenticated;
+grant select, insert, update, delete on sos_events        to anon, authenticated;
+
 
 -- ------------------------------------------------------------
 -- 7. Storage bucket for session assets (photos, videos, voice notes,
