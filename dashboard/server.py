@@ -877,6 +877,63 @@ async def wearable_settings_get() -> JSONResponse:
     return JSONResponse(s)
 
 
+_ALLOWED_SETTINGS_FIELDS = {
+    "b4_provider", "b5_provider", "sos_provider", "b5_vision_mode",
+    "sos_photo_interval_s", "sos_max_duration_s",
+}
+_ALLOWED_PROVIDERS = {"gemini", "openai"}
+_ALLOWED_VISION_MODES = {"snap_on_press", "gemini_video", "auto_snap_4s"}
+
+
+@app.post("/api/wearable/settings")
+async def wearable_settings_post(payload: dict) -> JSONResponse:
+    """Update one or more fields on the wearable_settings singleton.
+
+    Used by the voice center's per-button quick-toggle (e.g. flip B4 from
+    Gemini to OpenAI in one click). Validates field names and values
+    so a typo doesn't quietly write garbage to the row.
+    """
+    update: dict[str, Any] = {}
+    for k, v in payload.items():
+        if k not in _ALLOWED_SETTINGS_FIELDS:
+            return JSONResponse(
+                {"error": f"unknown or read-only field {k!r}"}, status_code=400
+            )
+        if k.endswith("_provider"):
+            if v not in _ALLOWED_PROVIDERS:
+                return JSONResponse(
+                    {"error": f"{k} must be 'gemini' or 'openai' — got {v!r}"},
+                    status_code=400,
+                )
+            update[k] = v
+        elif k == "b5_vision_mode":
+            if v not in _ALLOWED_VISION_MODES:
+                return JSONResponse(
+                    {"error": f"b5_vision_mode must be one of {_ALLOWED_VISION_MODES}"},
+                    status_code=400,
+                )
+            update[k] = v
+        elif k in ("sos_photo_interval_s", "sos_max_duration_s"):
+            n = int(v)
+            if n < 1 or n > 7200:
+                return JSONResponse(
+                    {"error": f"{k} out of range"}, status_code=400
+                )
+            update[k] = n
+    if not update:
+        return JSONResponse({"error": "no valid fields to update"}, status_code=400)
+
+    sb = bh._sb_client()
+    update["updated_at"] = bh._now_iso()
+    def _do():
+        return sb.table("wearable_settings").update(update).eq("id", "current").execute()
+    r = await asyncio.to_thread(_do)
+    saved = r.data[0] if r.data else update
+    await broadcast({"type": "wearable_settings_updated", **update})
+    await log(f"⚙ settings updated: {update}", "info")
+    return JSONResponse({"ok": True, "saved": saved})
+
+
 @app.get("/api/health")
 async def health() -> JSONResponse:
     return JSONResponse({
