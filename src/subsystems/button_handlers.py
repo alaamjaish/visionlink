@@ -751,33 +751,93 @@ async def _sos_run_session(
 # SOS — Gemini code path (uses dashboard's existing Live machinery)
 # ============================================================
 
+def _build_sos_gemini_prompt(worker_name: str) -> str:
+    """Brutal Gemini SOS system prompt. Mirrors the 'ABSOLUTE RULES' style
+    we use for the regular agent prompt because Gemini Live needs strong
+    instructions to avoid drifting into its default helpful-assistant mode."""
+    return (
+        f"🆘 EMERGENCY MODE — ABSOLUTE RULES. READ EVERY LINE.\n\n"
+        f"Worker {worker_name} just triggered an SOS panic alarm on their "
+        f"VisionLink wearable. They may be hurt, trapped, in danger, "
+        f"scared, or unable to think clearly. Your supervisor was emailed. "
+        f"You are the voice in their ear until help arrives.\n\n"
+        f"==================================================================\n"
+        f"RULE 1 — OPEN THE CALL IMMEDIATELY. The very FIRST thing you say:\n"
+        f"  '{worker_name}, I'm here with you. Help is on the way. "
+        f"Are you hurt? Where are you?'\n"
+        f"Do not wait for them to speak first. Speak first. Be the voice "
+        f"that arrives.\n"
+        f"==================================================================\n\n"
+        f"RULE 2 — STAY CALM, BE SHORT.\n"
+        f"  - 1 to 2 short sentences per turn. No paragraphs.\n"
+        f"  - Calm, low-stakes tone. No urgency in the voice — they have "
+        f"enough urgency already.\n"
+        f"  - Pause for them to answer. Do not fill silence with chatter.\n\n"
+        f"RULE 3 — FOLLOW THIS PROTOCOL:\n"
+        f"  Step 1: Confirm injury status — 'Are you hurt? Can you move?'\n"
+        f"  Step 2: Confirm location — 'Where are you in the building?'\n"
+        f"  Step 3: Confirm what happened — 'What happened? What do you see?'\n"
+        f"  Step 4: Reassure — 'Help is coming. Stay where you are if it's safe.'\n"
+        f"  Step 5: Keep them talking — 'I'm staying with you. Tell me what "
+        f"you can hear.'\n\n"
+        f"RULE 4 — TOOLS:\n"
+        f"  - Use ONLY `log_incident` during this emergency. NEVER call "
+        f"`send_report`, `mark_task_complete`, `request_part`, "
+        f"`get_my_assignments`, or `lookup_component`.\n"
+        f"  - Whenever the worker tells you ANYTHING factual (injury, "
+        f"hazard, location, pain level, what they see), IMMEDIATELY call "
+        f"log_incident with severity='critical' and a vivid description "
+        f"capturing their words. This is a permanent record for the "
+        f"medics arriving.\n\n"
+        f"RULE 5 — IF YOU SEE A CAMERA FRAME:\n"
+        f"  Briefly describe what's there. ONLY facts, no interpretation.\n"
+        f"  Example: 'I see a dark room and what looks like spilled liquid "
+        f"on the floor.' NOT: 'It looks dangerous.'\n\n"
+        f"RULE 6 — DO NOT MENTION:\n"
+        f"  - Tasks, parts, reports, components, torque specs, maintenance.\n"
+        f"  - Anything about your normal helpful-assistant mode.\n"
+        f"  - 'How can I help you with your tasks today' — NEVER. We are "
+        f"not in normal mode.\n\n"
+        f"RULE 7 — LANGUAGE: Match the worker. If they speak Turkish, "
+        f"Arabic, English — follow them. Do not translate, just speak "
+        f"their language back.\n\n"
+        f"==================================================================\n"
+        f"YOU ARE NOT A HELPFUL ASSISTANT RIGHT NOW. YOU ARE A 911 OPERATOR\n"
+        f"WITH EYES. ACT LIKE ONE.\n"
+        f"=================================================================="
+    )
+
+
 async def _sos_run_session_gemini(
     sos_id: str,
     settings: dict[str, Any],
     log: Callable[[str, str], Awaitable[None]],
     broadcast: Callable[[dict[str, Any]], Awaitable[None]],
     grab_jpeg: Callable[[], bytes],
-    ai_starter: Callable[[str, str, bool], Awaitable[dict[str, Any]]],
+    ai_starter: Callable[..., Awaitable[dict[str, Any]]],
     ai_stopper: Callable[[], Awaitable[dict[str, Any]]],
     snap_into_current: Optional[Callable[[], Awaitable[dict[str, Any]]]],
 ) -> None:
-    """SOS panic mode using the existing dashboard Gemini Live machinery.
+    """SOS panic mode using the existing dashboard Gemini Live machinery
+    BUT with a brutal SOS-specific system prompt overriding the default.
 
-    Strategy: don't reinvent the Live wiring. Just kick off a regular
-    Gemini snap-mode session through the dashboard's ai_starter callable
-    (same code path B5 single uses), then run side tasks for periodic
-    snap injection and resolution polling on top of it.
-
-    The agent uses whatever system prompt is in agent_settings.json.
-    That's fine — those tools (log_incident, send_report) are exactly
-    the right ones for the worker to dictate during SOS.
+    Strategy: kick off a Gemini snap-mode session via ai_starter, passing
+    the SOS prompt as system_prompt_override so Gemini boots into 911-
+    operator persona instead of helpful-assistant persona. Then run side
+    tasks for periodic snap injection and resolution polling on top.
     """
     sb = _sb_client()
     photo_interval = max(1, int(settings.get("sos_photo_interval_s", 10)))
     max_duration   = max(30, int(settings.get("sos_max_duration_s", 600)))
 
-    # Bring up Gemini snap-mode session if nothing's running
-    start_result = await ai_starter("gemini", "snap", True)
+    # Build the SOS prompt and pass it through ai_starter — this is the
+    # critical fix for "Gemini SOS just acts like a normal agent"
+    sos_prompt = _build_sos_gemini_prompt(settings.get("worker_name", "the worker"))
+    await log(f"🆘 Starting Gemini SOS with emergency prompt", "info")
+    start_result = await ai_starter(
+        "gemini", "snap", True,
+        system_prompt_override=sos_prompt,
+    )
     if start_result.get("error"):
         await log(f"🆘 SOS could not start Gemini: {start_result['error']}", "error")
         # Even though we couldn't start, keep the row open so the supervisor

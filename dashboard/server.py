@@ -372,7 +372,16 @@ class SessionCamera:
         return buf.getvalue()
 
 
-async def run_live_session(mode: str = "audio") -> None:
+async def run_live_session(
+    mode: str = "audio",
+    system_prompt_override: Optional[str] = None,
+) -> None:
+    """Run the Gemini Live session.
+
+    `system_prompt_override` lets callers (specifically the SOS controller)
+    inject a temporary persona without touching agent_settings.json. When
+    None, falls back to agent_settings['system_prompt'] as usual.
+    """
     if not API_KEY:
         await log("GEMINI_API_KEY missing in .env — cannot start", "error")
         return
@@ -381,7 +390,10 @@ async def run_live_session(mode: str = "audio") -> None:
     live_mode = mode if mode in ("audio", "snap", "video") else "audio"
     state["mode"] = live_mode
     last_frame_jpeg = None
-    await log(f"Starting Live session — mode={live_mode}")
+    if system_prompt_override:
+        await log(f"Starting Live session — mode={live_mode} (custom system prompt)")
+    else:
+        await log(f"Starting Live session — mode={live_mode}")
 
     client = genai.Client(api_key=API_KEY, http_options={"api_version": "v1alpha"})
     # Read latest tunable values from agent_settings (mutated via /api/agent/settings)
@@ -412,7 +424,7 @@ async def run_live_session(mode: str = "audio") -> None:
         # function_calling mode knob. Tool-calling reliability is driven by
         # the system prompt and example density.
         system_instruction=types.Content(parts=[types.Part.from_text(
-            text=agent_settings["system_prompt"]
+            text=system_prompt_override or agent_settings["system_prompt"]
         )]),
     )
 
@@ -1199,8 +1211,18 @@ def _grab_jpeg_for_buttons() -> bytes:
     return buf.getvalue()
 
 
-async def _button_ai_starter(provider: str, mode: str, camera: bool) -> dict[str, Any]:
-    """Start an AI session of the given provider — used by B4 / B5."""
+async def _button_ai_starter(
+    provider: str,
+    mode: str,
+    camera: bool,
+    system_prompt_override: Optional[str] = None,
+) -> dict[str, Any]:
+    """Start an AI session of the given provider — used by B4 / B5 / SOS.
+
+    `system_prompt_override` is plumbed through to run_live_session for
+    the Gemini path. (OpenAI uses its own per-session settings JSON
+    + the SOS-specific prompt is set inside _sos_run_session for OpenAI.)
+    """
     global live_task, oai_task
 
     # Refuse if any session is already running — pick a winner
@@ -1216,7 +1238,10 @@ async def _button_ai_starter(provider: str, mode: str, camera: bool) -> dict[str
         if not API_KEY:
             return {"error": "GEMINI_API_KEY missing"}
         gemini_mode = mode if mode in ("audio", "snap", "video") else "audio"
-        live_task = asyncio.create_task(run_live_session(mode=gemini_mode))
+        live_task = asyncio.create_task(run_live_session(
+            mode=gemini_mode,
+            system_prompt_override=system_prompt_override,
+        ))
         return {"started": "gemini", "mode": gemini_mode}
     return {"error": f"unknown provider {provider!r}"}
 
