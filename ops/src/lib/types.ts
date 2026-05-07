@@ -97,6 +97,7 @@ export type WearableSettings = {
   sos_photo_interval_s: number;
   sos_max_duration_s: number;
   sos_alert_recipient_role: string;
+  sos_provider: "gemini" | "openai";
   worker_id: string;
   worker_name: string;
   updated_at: string;

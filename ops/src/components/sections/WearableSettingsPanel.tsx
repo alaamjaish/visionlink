@@ -72,6 +72,7 @@ export function WearableSettingsPanel() {
         sos_photo_interval_s: s.sos_photo_interval_s,
         sos_max_duration_s: s.sos_max_duration_s,
         sos_alert_recipient_role: s.sos_alert_recipient_role,
+        sos_provider: s.sos_provider,
         worker_id: s.worker_id,
         worker_name: s.worker_name,
         updated_at: new Date().toISOString(),
@@ -142,7 +143,12 @@ export function WearableSettingsPanel() {
           value={s.b5_vision_mode}
           onChange={(e) => setS({ ...s, b5_vision_mode: e.target.value as WearableSettings["b5_vision_mode"] })}
         />
-        <div />
+        <Select
+          label="B6 SOS — Provider"
+          options={PROVIDER_OPTS}
+          value={s.sos_provider ?? "gemini"}
+          onChange={(e) => setS({ ...s, sos_provider: e.target.value as WearableSettings["sos_provider"] })}
+        />
         <Input
           label="SOS photo interval (s)"
           type="number"

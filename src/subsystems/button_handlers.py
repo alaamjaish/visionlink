@@ -87,6 +87,7 @@ async def load_wearable_settings() -> dict[str, Any]:
         "sos_photo_interval_s": 10,
         "sos_max_duration_s": 600,
         "sos_alert_recipient_role": "safety officer",
+        "sos_provider": "gemini",
         "worker_id": os.getenv("WORKER_ID", "demo_worker_001"),
         "worker_name": os.getenv("WORKER_NAME", "Alaa"),
     }
@@ -434,6 +435,9 @@ async def b6_sos_trigger(
     broadcast: Callable[[dict[str, Any]], Awaitable[None]],
     bridge: Any,
     grab_jpeg: Callable[[], bytes],
+    ai_starter: Optional[Callable[[str, str, bool], Awaitable[dict[str, Any]]]] = None,
+    ai_stopper: Optional[Callable[[], Awaitable[dict[str, Any]]]] = None,
+    snap_into_current: Optional[Callable[[], Awaitable[dict[str, Any]]]] = None,
 ) -> dict[str, Any]:
     """B6 double-click — TOGGLE SOS panic mode.
 
@@ -488,15 +492,30 @@ async def b6_sos_trigger(
     # Fire-and-forget alert email (don't block on it)
     asyncio.create_task(_sos_send_alert_email(sos_id, settings, sb))
 
-    # Spawn the long-running SOS controller task
-    task = asyncio.create_task(_sos_run_session(
-        sos_id=sos_id,
-        settings=settings,
-        log=log,
-        broadcast=broadcast,
-        bridge=bridge,
-        grab_jpeg=grab_jpeg,
-    ))
+    # Pick the brain — Gemini by default (matches B4/B5 default), OpenAI if explicitly set
+    sos_provider = settings.get("sos_provider", "gemini")
+
+    if sos_provider == "gemini" and ai_starter and ai_stopper:
+        task = asyncio.create_task(_sos_run_session_gemini(
+            sos_id=sos_id,
+            settings=settings,
+            log=log,
+            broadcast=broadcast,
+            grab_jpeg=grab_jpeg,
+            ai_starter=ai_starter,
+            ai_stopper=ai_stopper,
+            snap_into_current=snap_into_current,
+        ))
+    else:
+        # OpenAI path (or Gemini path with missing deps — falls back to OpenAI)
+        task = asyncio.create_task(_sos_run_session(
+            sos_id=sos_id,
+            settings=settings,
+            log=log,
+            broadcast=broadcast,
+            bridge=bridge,
+            grab_jpeg=grab_jpeg,
+        ))
     async with _state_lock:
         _state.sos_task = task
 
@@ -726,3 +745,178 @@ async def _sos_run_session(
             _state.sos_task = None
         await broadcast({"type": "sos_ended", "sos_id": sos_id})
         await log("🆘 SOS panic mode ended", "info")
+
+
+# ============================================================
+# SOS — Gemini code path (uses dashboard's existing Live machinery)
+# ============================================================
+
+async def _sos_run_session_gemini(
+    sos_id: str,
+    settings: dict[str, Any],
+    log: Callable[[str, str], Awaitable[None]],
+    broadcast: Callable[[dict[str, Any]], Awaitable[None]],
+    grab_jpeg: Callable[[], bytes],
+    ai_starter: Callable[[str, str, bool], Awaitable[dict[str, Any]]],
+    ai_stopper: Callable[[], Awaitable[dict[str, Any]]],
+    snap_into_current: Optional[Callable[[], Awaitable[dict[str, Any]]]],
+) -> None:
+    """SOS panic mode using the existing dashboard Gemini Live machinery.
+
+    Strategy: don't reinvent the Live wiring. Just kick off a regular
+    Gemini snap-mode session through the dashboard's ai_starter callable
+    (same code path B5 single uses), then run side tasks for periodic
+    snap injection and resolution polling on top of it.
+
+    The agent uses whatever system prompt is in agent_settings.json.
+    That's fine — those tools (log_incident, send_report) are exactly
+    the right ones for the worker to dictate during SOS.
+    """
+    sb = _sb_client()
+    photo_interval = max(1, int(settings.get("sos_photo_interval_s", 10)))
+    max_duration   = max(30, int(settings.get("sos_max_duration_s", 600)))
+
+    # Bring up Gemini snap-mode session if nothing's running
+    start_result = await ai_starter("gemini", "snap", True)
+    if start_result.get("error"):
+        await log(f"🆘 SOS could not start Gemini: {start_result['error']}", "error")
+        # Even though we couldn't start, keep the row open so the supervisor
+        # sees it. They can still resolve to acknowledge.
+        await _sos_idle_watch(sos_id, max_duration, broadcast, log)
+        return
+    await log(f"🆘 SOS Gemini session starting (interval={photo_interval}s)", "info")
+
+    async def auto_snap_loop() -> None:
+        # Give the session a moment to connect before injecting frames
+        await asyncio.sleep(2.0)
+        frame_n = 0
+        while True:
+            try:
+                if snap_into_current is not None:
+                    res = await snap_into_current()
+                    if res and not res.get("error"):
+                        frame_n += 1
+                # Also persist the frame to storage for the audit trail
+                jpeg = await asyncio.to_thread(grab_jpeg)
+                ts = int(time.time() * 1000)
+                path = f"sos/{sos_id}/frame_{ts}.jpg"
+                asyncio.create_task(_upload_to_storage(path, jpeg, "image/jpeg"))
+                # Bump frames_sent counter
+                def _bump():
+                    sb.table("sos_events").update({
+                        "frames_sent": frame_n,
+                    }).eq("id", sos_id).execute()
+                await asyncio.to_thread(_bump)
+                await broadcast({
+                    "type": "sos_frame",
+                    "sos_id": sos_id,
+                    "n": frame_n,
+                    "path": path,
+                })
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                print(f"[sos-gemini] snap loop err: {e!r}", flush=True)
+            await asyncio.sleep(photo_interval)
+
+    async def resolution_watcher() -> None:
+        while True:
+            await asyncio.sleep(2.0)
+            try:
+                def _check():
+                    return (sb.table("sos_events")
+                              .select("resolved,resolved_by,reason")
+                              .eq("id", sos_id)
+                              .limit(1)
+                              .execute())
+                r = await asyncio.to_thread(_check)
+                if r.data and r.data[0].get("resolved"):
+                    await log(
+                        f"🛑 SOS resolved by {r.data[0].get('resolved_by') or '?'}"
+                        f" ({r.data[0].get('reason') or '—'})",
+                        "info",
+                    )
+                    return
+            except Exception as e:
+                print(f"[sos-gemini] watcher err: {e!r}", flush=True)
+
+    snap_task    = asyncio.create_task(auto_snap_loop())
+    watcher_task = asyncio.create_task(resolution_watcher())
+
+    try:
+        await asyncio.wait_for(watcher_task, timeout=max_duration)
+    except asyncio.TimeoutError:
+        await log(f"🆘 SOS hit {max_duration}s timeout — auto-stop", "warning")
+        def _auto_resolve():
+            sb.table("sos_events").update({
+                "resolved": True,
+                "resolved_at": _now_iso(),
+                "resolved_by": "auto_timeout",
+                "reason": f"max duration {max_duration}s reached",
+            }).eq("id", sos_id).execute()
+        await asyncio.to_thread(_auto_resolve)
+    finally:
+        for t in (snap_task, watcher_task):
+            t.cancel()
+        for t in (snap_task, watcher_task):
+            try: await t
+            except (asyncio.CancelledError, Exception): pass
+
+        # Stop the Gemini session
+        try:
+            await ai_stopper()
+        except Exception as e:
+            print(f"[sos-gemini] ai_stopper err: {e!r}", flush=True)
+
+        # Mark resolved_at if not already set
+        try:
+            def _final():
+                cur = (sb.table("sos_events")
+                         .select("resolved_at")
+                         .eq("id", sos_id)
+                         .limit(1)
+                         .execute())
+                if cur.data and not cur.data[0].get("resolved_at"):
+                    sb.table("sos_events").update({
+                        "resolved_at": _now_iso(),
+                    }).eq("id", sos_id).execute()
+            await asyncio.to_thread(_final)
+        except Exception:
+            pass
+
+        async with _state_lock:
+            _state.sos_active_id = None
+            _state.sos_task = None
+        await broadcast({"type": "sos_ended", "sos_id": sos_id})
+        await log("🆘 SOS panic mode ended (Gemini)", "info")
+
+
+async def _sos_idle_watch(
+    sos_id: str,
+    max_duration: int,
+    broadcast: Callable[[dict[str, Any]], Awaitable[None]],
+    log: Callable[[str, str], Awaitable[None]],
+) -> None:
+    """Fallback watcher when Gemini failed to start. Just polls for
+    resolved=true so the row gets cleaned up properly."""
+    sb = _sb_client()
+    deadline = time.time() + max_duration
+    while time.time() < deadline:
+        await asyncio.sleep(2.0)
+        def _check():
+            return (sb.table("sos_events")
+                      .select("resolved")
+                      .eq("id", sos_id)
+                      .limit(1)
+                      .execute())
+        try:
+            r = await asyncio.to_thread(_check)
+            if r.data and r.data[0].get("resolved"):
+                break
+        except Exception:
+            pass
+    async with _state_lock:
+        _state.sos_active_id = None
+        _state.sos_task = None
+    await broadcast({"type": "sos_ended", "sos_id": sos_id})
+    await log("🆘 SOS panic mode ended (no AI session)", "info")

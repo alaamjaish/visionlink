@@ -1278,6 +1278,10 @@ async def button_dispatch(n: int, event: str) -> JSONResponse:
             log, broadcast,
             bridge=bridge,
             grab_jpeg=lambda: _grab_jpeg_for_buttons(),
+            # New deps so SOS can use Gemini (or OpenAI) per wearable_settings.sos_provider
+            ai_starter=_button_ai_starter,
+            ai_stopper=_button_ai_stopper,
+            snap_into_current=_b5_snap_existing,
         ))
     else:
         return JSONResponse(

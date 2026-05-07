@@ -25,6 +25,10 @@ create table if not exists wearable_settings (
   sos_photo_interval_s int not null default 10,
   sos_max_duration_s   int not null default 600,   -- 10 minutes hard cap
   sos_alert_recipient_role text not null default 'safety officer',
+  -- Brain that runs the SOS conversation. Defaults to Gemini (cheap,
+  -- fast, matches the rest of the wearable). Flip to 'openai' for
+  -- gpt-realtime-2 calm-emergency demo runs.
+  sos_provider text not null default 'gemini',
   -- Worker identity (defaults from .env, override here for demo)
   worker_id   text not null default 'demo_worker_001',
   worker_name text not null default 'Alaa',
