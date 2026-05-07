@@ -1163,6 +1163,59 @@ async def _button_ai_stopper() -> dict[str, Any]:
     return {"status": "stopping", "stopped": stopped}
 
 
+async def _b5_auto_snap_when_ready() -> None:
+    """Wait up to ~6 seconds for the live session to be connected, then
+    grab one frame from the camera and inject it. This is what makes B5
+    feel like 'show me what I'm pointing at' instead of 'open camera and
+    do nothing'."""
+    for _ in range(60):  # ~6 s @ 100ms
+        if current_session is not None or oai_session is not None:
+            # Let the session settle a beat before injecting (otherwise the
+            # frame races the very first user audio block)
+            await asyncio.sleep(0.6)
+            try:
+                jpeg = await asyncio.to_thread(_grab_jpeg_for_buttons)
+                if oai_session is not None:
+                    await oai_session.send_image(
+                        jpeg,
+                        prompt="The worker just pointed the camera at "
+                               "something. Briefly say what you can see.",
+                    )
+                elif current_session is not None and live_mode in ("snap", "video"):
+                    await current_session.send_realtime_input(
+                        video=types.Blob(data=jpeg, mime_type="image/jpeg")
+                    )
+                await log("👁 B5 auto-snap sent — agent should comment on it", "info")
+                await broadcast({"type": "frame_sent", "n": -1, "auto": True})
+            except Exception as e:
+                await log(f"B5 auto-snap failed: {e}", "warning")
+            return
+        await asyncio.sleep(0.1)
+    await log("B5 auto-snap timed out — session never became ready", "warning")
+
+
+async def _b5_snap_existing() -> dict[str, Any]:
+    """B5 pressed while a session is already running — just snap a frame
+    into the existing session. No restart needed."""
+    try:
+        jpeg = await asyncio.to_thread(_grab_jpeg_for_buttons)
+        if oai_session is not None:
+            await oai_session.send_image(
+                jpeg,
+                prompt="The worker just pointed the camera at something else. "
+                       "Briefly describe what you see now.",
+            )
+            return {"snapped": "openai", "bytes": len(jpeg)}
+        if current_session is not None and live_mode in ("snap", "video"):
+            await current_session.send_realtime_input(
+                video=types.Blob(data=jpeg, mime_type="image/jpeg")
+            )
+            return {"snapped": "gemini", "bytes": len(jpeg)}
+        return {"error": "active session is audio-only — double-click to stop, then re-arm B5"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.post("/api/live/stop_any")
 async def live_stop_any() -> JSONResponse:
     """Unified stop — kills whichever AI session is running.
@@ -1202,7 +1255,16 @@ async def button_dispatch(n: int, event: str) -> JSONResponse:
     elif (n, event) == (4, "double"):
         result = await _run(lambda: bh.b_ai_stop_any(log, _button_ai_stopper))
     elif (n, event) == (5, "single"):
-        result = await _run(lambda: bh.b5_ai_voice_vision(log, _button_ai_starter))
+        # If a session is already live, just inject a fresh frame.
+        # Otherwise start a new vision session AND schedule an auto-snap.
+        any_live = (live_task and not live_task.done()) or \
+                   (oai_task and not oai_task.done())
+        if any_live:
+            await log("👁 B5 → snapping into the live session", "info")
+            result = await _run(lambda: _b5_snap_existing())
+        else:
+            result = await _run(lambda: bh.b5_ai_voice_vision(log, _button_ai_starter))
+            asyncio.create_task(_b5_auto_snap_when_ready())
     elif (n, event) == (5, "double"):
         result = await _run(lambda: bh.b_ai_stop_any(log, _button_ai_stopper))
     elif (n, event) == (6, "single"):
