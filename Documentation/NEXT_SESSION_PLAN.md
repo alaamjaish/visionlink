@@ -1,4 +1,16 @@
-# Next Session Plan — After 2026-04-19
+# Next Session Plan
+
+> **Update 2026-05-08:** OpenAI's `gpt-realtime-2` (released 2026-05-07)
+> is now integrated as a **second voice provider** alongside Gemini Live.
+> See `Documentation/sessions/2026-05-08-openai-realtime.md`. The
+> Provider radio in the dashboard switches between them; both share the
+> same six tools, database, and ops dashboard. The plan below is from
+> the earlier 2026-04-19 session and largely still applies — substitute
+> "Provider" radio for "mode" wherever relevant.
+
+---
+
+# Original Plan — After 2026-04-19
 
 **Theme**: Move from "it works via a browser button" to "**it works when I press the physical button on my wearable**", and wire Buttons 5 + 6 to real external services (Supabase for lookup, Claude + Resend for email).
 

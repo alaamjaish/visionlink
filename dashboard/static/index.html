@@ -136,6 +136,7 @@
     }
     .msg.user   .who { color: var(--warn); }
     .msg.gemini .who { color: var(--accent); }
+    .msg.openai .who { color: var(--good); }
     .msg.system .who { color: var(--muted); }
     .msg.tool {
       background: linear-gradient(90deg, rgba(60, 211, 159, 0.12), transparent);
@@ -289,16 +290,24 @@
   <main>
     <section class="panel controls">
       <h2>Controls</h2>
-      <div class="mode-row" style="margin-bottom:12px;">
+      <div class="mode-row" style="margin-bottom:10px;">
+        <span style="font-size:12px;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase;margin-right:12px;">PROVIDER</span>
+        <label class="mode-opt"><input type="radio" name="provider" value="gemini" checked> 🟡 Gemini Live <span class="hint">(gemini-3.1-flash-live-preview)</span></label>
+        <label class="mode-opt"><input type="radio" name="provider" value="openai"> 🟢 OpenAI Realtime <span class="hint">(gpt-realtime-2 — new)</span></label>
+      </div>
+      <div class="mode-row" id="geminiModeRow" style="margin-bottom:12px;">
         <span style="font-size:12px;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase;margin-right:12px;">MODE</span>
         <label class="mode-opt"><input type="radio" name="mode" value="audio" checked> Audio only <span class="hint">(15 min cap)</span></label>
         <label class="mode-opt"><input type="radio" name="mode" value="snap"> Audio + Snap <span class="hint">(send one photo on demand)</span></label>
         <label class="mode-opt"><input type="radio" name="mode" value="video"> Audio + Live Video <span class="hint">(1 fps, 2 min cap)</span></label>
       </div>
+      <div class="mode-row" id="openaiModeRow" style="margin-bottom:12px;display:none;">
+        <span class="hint" style="font-size:11.5px;">OpenAI accepts a single image at any time during the session — no separate mode needed. Click <b>📷 SNAP &amp; ASK</b> while live to send the camera feed.</span>
+      </div>
       <div class="btn-row">
         <button id="btnStart" class="btn-primary">START LIVE</button>
         <button id="btnStop"  class="btn-danger"  disabled>STOP</button>
-        <button id="btnSnap"  class="btn-ghost"   disabled>SNAP TO GEMINI</button>
+        <button id="btnSnap"  class="btn-ghost"   disabled>📷 SNAP &amp; ASK</button>
         <button id="btnPhoto" class="btn-ghost">TAKE PHOTO</button>
         <button id="btnTone"  class="btn-ghost">TEST TONE</button>
         <button id="btnAgent" class="btn-ghost">⚙ AGENT</button>
@@ -306,7 +315,7 @@
       </div>
       <div class="lights">
         <div class="light"><span class="dot" id="dotWs"></span>   WebSocket</div>
-        <div class="light"><span class="dot" id="dotLive"></span> Gemini Live</div>
+        <div class="light"><span class="dot" id="dotLive"></span> <span id="liveLabel">Gemini Live</span></div>
         <div class="light"><span class="dot" id="dotTurn"></span> Turn</div>
         <div class="light"><span class="dot" id="dotVideo"></span> Video streaming</div>
         <div class="light" id="modeLabel" style="margin-left:auto;">mode: audio</div>
@@ -342,11 +351,25 @@
       <div class="modal-body">
 
         <div class="field-group">
+          <label>Provider</label>
+          <div class="mode-row">
+            <label class="mode-opt"><input type="radio" name="agentProvider" value="gemini" checked> 🟡 Gemini Live</label>
+            <label class="mode-opt"><input type="radio" name="agentProvider" value="openai"> 🟢 OpenAI gpt-realtime-2</label>
+          </div>
+          <div class="help">
+            Each provider has its own system prompt, VAD config, and tunables —
+            saved to a separate file. Switching here only changes which set
+            of settings you're editing.
+          </div>
+        </div>
+
+        <div class="field-group">
           <label>Read-only</label>
           <div class="ro-row">
             <span><b>Model:</b> <code id="agentModel">—</code></span>
             <span><b>Settings file:</b> <code id="agentSettingsPath">—</code></span>
             <span><b>Live session:</b> <code id="agentLiveActive">—</code></span>
+            <span id="agentApiKeyRow" style="display:none;"><b>API key in .env:</b> <code id="agentApiKey">—</code></span>
           </div>
           <div class="help">
             Edits below are saved to disk and applied to the <b>next</b>
@@ -358,42 +381,105 @@
         <div class="field-group">
           <label>System Prompt</label>
           <textarea id="agentSystemPrompt" class="prompt"
-            placeholder="What should Gemini act like? What are its rules? What tools must it call?"></textarea>
+            placeholder="What should the agent act like? What are its rules? What tools must it call?"></textarea>
           <div class="help">
-            Gemini's brain. Tells it who it is, when to call tools, and how
+            The agent's brain. Tells it who it is, when to call tools, and how
             to speak. Reset button restores the prompt the project shipped with.
           </div>
         </div>
 
-        <div class="field-group">
-          <label>Voice Activity Detection (VAD)</label>
-          <div class="grid-2">
-            <div class="field-group">
-              <label>Start sensitivity</label>
-              <select id="vadStart">
-                <option value="HIGH">HIGH (triggers easily)</option>
-                <option value="LOW">LOW (needs strong signal to start)</option>
-              </select>
+        <!-- Gemini-only fields -->
+        <div id="geminiFields">
+          <div class="field-group">
+            <label>Voice Activity Detection (VAD)</label>
+            <div class="grid-2">
+              <div class="field-group">
+                <label>Start sensitivity</label>
+                <select id="vadStart">
+                  <option value="HIGH">HIGH (triggers easily)</option>
+                  <option value="LOW">LOW (needs strong signal to start)</option>
+                </select>
+              </div>
+              <div class="field-group">
+                <label>End sensitivity</label>
+                <select id="vadEnd">
+                  <option value="HIGH">HIGH (commits silence quickly)</option>
+                  <option value="LOW">LOW (waits for sustained silence)</option>
+                </select>
+              </div>
+              <div class="field-group">
+                <label>Prefix padding (ms)</label>
+                <input id="vadPrefix" type="number" min="0" max="2000" step="50">
+              </div>
+              <div class="field-group">
+                <label>Silence duration (ms)</label>
+                <input id="vadSilence" type="number" min="0" max="3000" step="50">
+              </div>
             </div>
-            <div class="field-group">
-              <label>End sensitivity</label>
-              <select id="vadEnd">
-                <option value="HIGH">HIGH (commits silence quickly)</option>
-                <option value="LOW">LOW (waits for sustained silence)</option>
-              </select>
-            </div>
-            <div class="field-group">
-              <label>Prefix padding (ms)</label>
-              <input id="vadPrefix" type="number" min="0" max="2000" step="50">
-            </div>
-            <div class="field-group">
-              <label>Silence duration (ms)</label>
-              <input id="vadSilence" type="number" min="0" max="3000" step="50">
+            <div class="help">
+              With our hot I2S mic, HIGH end-sensitivity + ~500ms silence works.
+              Drop end-sensitivity to LOW only if Gemini cuts you off mid-sentence.
             </div>
           </div>
-          <div class="help">
-            With our hot I2S mic, HIGH end-sensitivity + ~500ms silence works.
-            Drop end-sensitivity to LOW only if Gemini cuts you off mid-sentence.
+        </div>
+
+        <!-- OpenAI-only fields -->
+        <div id="openaiFields" style="display:none;">
+          <div class="field-group">
+            <label>Voice + Reasoning</label>
+            <div class="grid-2">
+              <div class="field-group">
+                <label>Voice</label>
+                <select id="oaiVoice">
+                  <option value="marin">marin (warm)</option>
+                  <option value="cedar">cedar (deeper)</option>
+                  <option value="alloy">alloy</option>
+                  <option value="ash">ash</option>
+                  <option value="ballad">ballad</option>
+                  <option value="coral">coral</option>
+                  <option value="echo">echo</option>
+                  <option value="sage">sage</option>
+                  <option value="shimmer">shimmer</option>
+                  <option value="verse">verse</option>
+                </select>
+              </div>
+              <div class="field-group">
+                <label>Reasoning effort</label>
+                <select id="oaiReasoning">
+                  <option value="minimal">minimal (fastest, cheapest)</option>
+                  <option value="low" selected>low (recommended for production)</option>
+                  <option value="medium">medium</option>
+                  <option value="high">high (best quality, slowest)</option>
+                </select>
+              </div>
+            </div>
+            <div class="help">
+              gpt-realtime-2 supports configurable reasoning effort. <b>low</b>
+              is OpenAI's recommended default. Use <b>high</b> for hard
+              multi-step requests.
+            </div>
+          </div>
+
+          <div class="field-group">
+            <label>Server VAD</label>
+            <div class="grid-2">
+              <div class="field-group">
+                <label>Threshold (0..1)</label>
+                <input id="oaiVadThreshold" type="number" min="0" max="1" step="0.05">
+              </div>
+              <div class="field-group">
+                <label>Prefix padding (ms)</label>
+                <input id="oaiVadPrefix" type="number" min="0" max="2000" step="50">
+              </div>
+              <div class="field-group">
+                <label>Silence duration (ms)</label>
+                <input id="oaiVadSilence" type="number" min="0" max="3000" step="50">
+              </div>
+            </div>
+            <div class="help">
+              Higher threshold → less likely to false-trigger on background
+              noise. 0.5 is a sane default; raise to 0.7 in noisy factory.
+            </div>
           </div>
         </div>
 
@@ -406,14 +492,14 @@
             </div>
             <div class="field-group">
               <label>Speaker gain (×) — read-only</label>
-              <input id="spkGainRO" type="number" disabled value="3.0"
+              <input id="spkGainRO" type="number" disabled value="5.0"
                      style="opacity:0.5;">
             </div>
           </div>
           <div class="help">
             Mic gain compensates for the SPH0645's hot DC noise floor. 6× is
-            the validated sweet spot. Speaker gain lives in the audio worker
-            subprocess and isn't live-tunable yet.
+            the validated sweet spot for both providers. Speaker gain lives
+            in the audio worker subprocess and isn't live-tunable yet.
           </div>
         </div>
 
@@ -421,8 +507,8 @@
           <label>Tools (read-only)</label>
           <div id="toolsList" style="display:flex;flex-direction:column;gap:10px;"></div>
           <div class="help">
-            These are the functions Gemini may call. To change their code,
-            edit <code>src/ai/tools.py</code>.
+            These are the functions the agent may call. Same six tools shared
+            across both providers — to change them, edit <code>src/ai/tools.py</code>.
           </div>
         </div>
 
@@ -451,11 +537,15 @@
     const transcript = qs('transcript');
     const photoWrap  = qs('photoWrap');
     const logBox   = qs('log');
+    const geminiModeRow = qs('geminiModeRow');
+    const openaiModeRow = qs('openaiModeRow');
+    const liveLabel    = qs('liveLabel');
     let currentMode = 'audio';
+    let currentProvider = 'gemini';
     let frameCount = 0;
 
-    let currentTurn = { user: '', gemini: '' };
-    let currentNodes = { user: null, gemini: null };
+    let currentTurn = { user: '', gemini: '', openai: '' };
+    let currentNodes = { user: null, gemini: null, openai: null };
 
     function appendMsg(role, text, kind = role) {
       const div = document.createElement('div');
@@ -464,6 +554,7 @@
       who.className = 'who';
       who.textContent = role === 'user' ? 'you'
                       : role === 'gemini' ? 'gemini'
+                      : role === 'openai' ? 'openai'
                       : 'system';
       div.appendChild(who);
       const body = document.createElement('span');
@@ -473,6 +564,23 @@
       transcript.scrollTop = transcript.scrollHeight;
       return { el: div, body };
     }
+
+    function getProvider() {
+      const r = document.querySelector('input[name="provider"]:checked');
+      return r ? r.value : 'gemini';
+    }
+    function syncProviderUI() {
+      currentProvider = getProvider();
+      const isOai = currentProvider === 'openai';
+      geminiModeRow.style.display = isOai ? 'none' : '';
+      openaiModeRow.style.display = isOai ? '' : 'none';
+      liveLabel.textContent = isOai ? 'OpenAI Realtime' : 'Gemini Live';
+      qs('modelTag').textContent = isOai ? 'gpt-realtime-2' : 'gemini-3.1-flash-live-preview';
+    }
+    document.querySelectorAll('input[name="provider"]').forEach(el => {
+      el.addEventListener('change', syncProviderUI);
+    });
+    syncProviderUI();
 
     function appendLog(level, msg) {
       const line = document.createElement('div');
@@ -492,11 +600,19 @@
         currentMode = mode;
         modeLabel.textContent = 'mode: ' + mode;
       }
-      // SNAP button is enabled only in snap/video modes during an active session
-      btnSnap.disabled = !(on && (currentMode === 'snap' || currentMode === 'video'));
-      dotVideo.classList.toggle('on', !!on && currentMode === 'video');
-      // Disable mode selector while live
+      // SNAP rules:
+      //   Gemini → only enabled in snap/video modes during an active session
+      //   OpenAI → enabled any time the session is live (no mode distinction)
+      const isOai = currentProvider === 'openai' || mode === 'openai';
+      if (isOai) {
+        btnSnap.disabled = !on;
+      } else {
+        btnSnap.disabled = !(on && (currentMode === 'snap' || currentMode === 'video'));
+      }
+      dotVideo.classList.toggle('on', !!on && !isOai && currentMode === 'video');
+      // Disable provider + mode selectors while live
       document.querySelectorAll('input[name="mode"]').forEach(el => el.disabled = !!on);
+      document.querySelectorAll('input[name="provider"]').forEach(el => el.disabled = !!on);
       if (!on) { frameCount = 0; frameCountEl.textContent = ''; }
     }
 
@@ -611,24 +727,47 @@
 
     btnStart.addEventListener('click', async () => {
       btnStart.disabled = true;
-      const mode = document.querySelector('input[name="mode"]:checked').value;
-      currentMode = mode;
-      appendLog('info', `Starting Gemini Live (mode: ${mode})...`);
-      await post('/api/live/start?mode=' + encodeURIComponent(mode));
+      const provider = getProvider();
+      currentProvider = provider;
+      if (provider === 'openai') {
+        appendLog('info', 'Starting OpenAI Realtime (gpt-realtime-2)...');
+        const r = await post('/api/live/oai/start?camera=true');
+        if (r && r.error) {
+          appendLog('error', 'OpenAI start: ' + r.error);
+          btnStart.disabled = false;
+        }
+      } else {
+        const mode = document.querySelector('input[name="mode"]:checked').value;
+        currentMode = mode;
+        appendLog('info', `Starting Gemini Live (mode: ${mode})...`);
+        await post('/api/live/start?mode=' + encodeURIComponent(mode));
+      }
     });
 
     btnStop.addEventListener('click', async () => {
       btnStop.disabled = true;
-      appendLog('info', 'Stopping Gemini Live...');
-      await post('/api/live/stop');
+      if (currentProvider === 'openai') {
+        appendLog('info', 'Stopping OpenAI Realtime...');
+        await post('/api/live/oai/stop');
+      } else {
+        appendLog('info', 'Stopping Gemini Live...');
+        await post('/api/live/stop');
+      }
     });
 
     btnSnap.addEventListener('click', async () => {
       btnSnap.disabled = true;
-      appendLog('info', 'Sending snap to Gemini...');
-      const r = await post('/api/live/snap');
-      if (r && r.error) appendLog('error', 'Snap: ' + r.error);
-      setTimeout(() => { if (currentMode !== 'audio') btnSnap.disabled = false; }, 300);
+      if (currentProvider === 'openai') {
+        appendLog('info', 'Snap & Ask → OpenAI...');
+        const r = await post('/api/live/oai/snap');
+        if (r && r.error) appendLog('error', 'OpenAI snap: ' + r.error);
+        setTimeout(() => { btnSnap.disabled = false; }, 300);
+      } else {
+        appendLog('info', 'Sending snap to Gemini...');
+        const r = await post('/api/live/snap');
+        if (r && r.error) appendLog('error', 'Snap: ' + r.error);
+        setTimeout(() => { if (currentMode !== 'audio') btnSnap.disabled = false; }, 300);
+      }
     });
 
     btnPhoto.addEventListener('click', async () => {
@@ -669,7 +808,32 @@
     const agentModel = qs('agentModel');
     const agentSettingsPath = qs('agentSettingsPath');
     const agentLiveActive = qs('agentLiveActive');
+    const agentApiKey   = qs('agentApiKey');
+    const agentApiKeyRow = qs('agentApiKeyRow');
+    const geminiFields = qs('geminiFields');
+    const openaiFields = qs('openaiFields');
+    const oaiVoice     = qs('oaiVoice');
+    const oaiReasoning = qs('oaiReasoning');
+    const oaiVadThreshold = qs('oaiVadThreshold');
+    const oaiVadPrefix    = qs('oaiVadPrefix');
+    const oaiVadSilence   = qs('oaiVadSilence');
     let defaultSystemPrompt = '';
+    function getAgentProvider() {
+      const r = document.querySelector('input[name="agentProvider"]:checked');
+      return r ? r.value : 'gemini';
+    }
+    function setAgentFieldsVisible() {
+      const isOai = getAgentProvider() === 'openai';
+      geminiFields.style.display = isOai ? 'none' : '';
+      openaiFields.style.display = isOai ? '' : 'none';
+      agentApiKeyRow.style.display = isOai ? '' : 'none';
+    }
+    document.querySelectorAll('input[name="agentProvider"]').forEach(el => {
+      el.addEventListener('change', () => {
+        setAgentFieldsVisible();
+        loadAgentSettings();
+      });
+    });
 
     function setSaveStatus(text, kind) {
       agentSaveStatus.textContent = text || '';
@@ -703,23 +867,39 @@
     async function loadAgentSettings() {
       setSaveStatus('Loading...');
       try {
-        const r = await fetch('/api/agent/settings');
+        const provider = getAgentProvider();
+        const url = provider === 'openai'
+          ? '/api/agent/openai/settings'
+          : '/api/agent/settings';
+        const r = await fetch(url);
         const d = await r.json();
         agentModel.textContent = d.model || '';
         agentSettingsPath.textContent = d.settings_path || '';
         agentLiveActive.textContent = d.live_active ? 'YES' : 'no';
         agentSystemPrompt.value = d.system_prompt || '';
         defaultSystemPrompt = d.default_system_prompt || '';
-        if (d.vad) {
-          vadStart.value = d.vad.start_sensitivity || 'HIGH';
-          vadEnd.value   = d.vad.end_sensitivity || 'HIGH';
-          vadPrefix.value = d.vad.prefix_padding_ms;
-          vadSilence.value = d.vad.silence_duration_ms;
+        if (provider === 'openai') {
+          agentApiKey.textContent = d.has_api_key ? 'YES ✓' : 'NO — add OPENAI_API_KEY to .env';
+          oaiVoice.value = d.voice || 'marin';
+          oaiReasoning.value = d.reasoning_effort || 'low';
+          if (d.vad) {
+            oaiVadThreshold.value = d.vad.threshold ?? 0.5;
+            oaiVadPrefix.value = d.vad.prefix_padding_ms ?? 300;
+            oaiVadSilence.value = d.vad.silence_duration_ms ?? 500;
+          }
+        } else {
+          if (d.vad) {
+            vadStart.value = d.vad.start_sensitivity || 'HIGH';
+            vadEnd.value   = d.vad.end_sensitivity || 'HIGH';
+            vadPrefix.value = d.vad.prefix_padding_ms;
+            vadSilence.value = d.vad.silence_duration_ms;
+          }
         }
         if (d.audio) {
           micGain.value = d.audio.mic_gain;
         }
         renderTools(d.tools || []);
+        setAgentFieldsVisible();
         setSaveStatus('');
       } catch (e) {
         setSaveStatus('Failed to load: ' + e.message, 'err');
@@ -743,7 +923,11 @@
       if (!confirm('Reset agent settings to project defaults? This cannot be undone.')) return;
       setSaveStatus('Resetting...');
       try {
-        const r = await fetch('/api/agent/settings', {
+        const provider = getAgentProvider();
+        const url = provider === 'openai'
+          ? '/api/agent/openai/settings'
+          : '/api/agent/settings';
+        const r = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ reset: true }),
@@ -758,21 +942,41 @@
     });
 
     agentSave.addEventListener('click', async () => {
-      const payload = {
-        system_prompt: agentSystemPrompt.value,
-        vad: {
-          start_sensitivity: vadStart.value,
-          end_sensitivity:   vadEnd.value,
-          prefix_padding_ms: parseInt(vadPrefix.value, 10),
-          silence_duration_ms: parseInt(vadSilence.value, 10),
-        },
-        audio: {
-          mic_gain: parseFloat(micGain.value),
-        },
-      };
+      const provider = getAgentProvider();
+      let payload, url;
+      if (provider === 'openai') {
+        url = '/api/agent/openai/settings';
+        payload = {
+          system_prompt: agentSystemPrompt.value,
+          voice: oaiVoice.value,
+          reasoning_effort: oaiReasoning.value,
+          vad: {
+            threshold: parseFloat(oaiVadThreshold.value),
+            prefix_padding_ms: parseInt(oaiVadPrefix.value, 10),
+            silence_duration_ms: parseInt(oaiVadSilence.value, 10),
+          },
+          audio: {
+            mic_gain: parseFloat(micGain.value),
+          },
+        };
+      } else {
+        url = '/api/agent/settings';
+        payload = {
+          system_prompt: agentSystemPrompt.value,
+          vad: {
+            start_sensitivity: vadStart.value,
+            end_sensitivity:   vadEnd.value,
+            prefix_padding_ms: parseInt(vadPrefix.value, 10),
+            silence_duration_ms: parseInt(vadSilence.value, 10),
+          },
+          audio: {
+            mic_gain: parseFloat(micGain.value),
+          },
+        };
+      }
       setSaveStatus('Saving...');
       try {
-        const r = await fetch('/api/agent/settings', {
+        const r = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),

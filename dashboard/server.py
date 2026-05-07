@@ -35,6 +35,14 @@ from google.genai import types
 from dashboard.audio_bridge import AudioBridge
 from dashboard.audio_worker import BLOCK, MIC_RATE, SPEAKER_RATE
 from src.ai.tools import TOOL_HANDLERS, WORKER_NAME, build_tools
+from src.ai.openai_realtime import (
+    DEFAULT_OPENAI_SETTINGS,
+    OPENAI_MODEL,
+    OpenAISession,
+    load_openai_settings,
+    save_openai_settings,
+)
+from src.ai.openai_tools import describe_openai_tools
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -47,6 +55,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 load_dotenv(PROJECT_ROOT / ".env", override=True)
 
 API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 MODEL = "gemini-3.1-flash-live-preview"
 # MIC_RATE / SPEAKER_RATE / BLOCK come from dashboard.audio_worker
 # so the parent and worker can never disagree on format.
@@ -234,6 +243,11 @@ current_session = None  # type: ignore
 current_camera = None   # type: ignore  # SessionCamera instance during snap/video modes
 live_mode: str = "audio"   # "audio" | "snap" | "video"
 last_frame_jpeg: Optional[bytes] = None
+
+# ---- OpenAI Realtime session (parallel to Gemini, never coexists with it) ----
+oai_task: Optional[asyncio.Task] = None
+oai_session: Optional[OpenAISession] = None
+oai_camera: Optional["SessionCamera"] = None  # forward type ref
 
 # Audio I/O lives in a subprocess so an ALSA `plug` device assertion
 # (the C-level pcm_plugin.c crash) only kills the child, not the FastAPI
@@ -851,7 +865,233 @@ async def health() -> JSONResponse:
     return JSONResponse({
         "ok": True,
         "has_api_key": bool(API_KEY),
+        "has_openai_key": bool(OPENAI_API_KEY),
         "model": MODEL,
+        "openai_model": OPENAI_MODEL,
         "live_connected": state["live_connected"],
+        "openai_connected": oai_session is not None,
         "clients": len(ws_clients),
     })
+
+
+# ============================================================
+# OpenAI Realtime — parallel provider, shares tools/DB/audio
+# ============================================================
+
+async def _run_oai_session_task(start_camera: bool) -> None:
+    """Wrapper that holds a reference to the OpenAISession so other
+    endpoints (snap, stop) can talk to it while it runs."""
+    global oai_session, oai_camera, last_frame_jpeg
+
+    if not OPENAI_API_KEY:
+        await log("OPENAI_API_KEY missing in .env — cannot start OpenAI session", "error")
+        return
+
+    settings = load_openai_settings()
+    sess = OpenAISession(
+        api_key=OPENAI_API_KEY,
+        bridge=get_bridge(),
+        settings=settings,
+        broadcast=broadcast,
+        log=log,
+        dlog=dlog,
+    )
+    oai_session = sess
+
+    # Open the session camera if requested (so SNAP & ASK works without
+    # blocking on a transient picamera2 init)
+    cam: Optional[SessionCamera] = None
+    if start_camera:
+        try:
+            cam = SessionCamera()
+            await asyncio.to_thread(cam.open)
+            oai_camera = cam
+            await log("Session camera opened (OpenAI mode)", "info")
+        except Exception as exc:
+            await log(f"OpenAI camera open failed: {exc} — continuing audio-only", "error")
+            cam = None
+            oai_camera = None
+
+    state["mode"] = "openai"
+    state["live_connected"] = True
+    try:
+        await sess.run()
+    finally:
+        oai_session = None
+        if cam is not None:
+            try:
+                await asyncio.to_thread(cam.close)
+            except Exception:
+                pass
+        oai_camera = None
+        state["live_connected"] = False
+        state["mode"] = "audio"
+        last_frame_jpeg = None
+
+
+@app.post("/api/live/oai/start")
+async def oai_start(camera: bool = False) -> JSONResponse:
+    """Start the OpenAI Realtime session.
+
+    Set ?camera=true to also open the Pi camera so SNAP & ASK works
+    without a fresh picamera2 init each call.
+    """
+    global oai_task
+
+    if not OPENAI_API_KEY:
+        return JSONResponse(
+            {"error": "OPENAI_API_KEY missing in .env"},
+            status_code=400,
+        )
+    if live_task and not live_task.done():
+        return JSONResponse(
+            {"error": "Gemini Live session is running — stop it first"},
+            status_code=409,
+        )
+    if oai_task and not oai_task.done():
+        return JSONResponse({"status": "already_running"})
+
+    oai_task = asyncio.create_task(_run_oai_session_task(camera))
+    return JSONResponse({"status": "starting", "provider": "openai", "camera": camera})
+
+
+@app.post("/api/live/oai/stop")
+async def oai_stop() -> JSONResponse:
+    global oai_task
+    if oai_task and not oai_task.done():
+        oai_task.cancel()
+        return JSONResponse({"status": "stopping"})
+    return JSONResponse({"status": "not_running"})
+
+
+@app.post("/api/live/oai/snap")
+async def oai_snap(prompt: Optional[str] = None) -> JSONResponse:
+    """Capture a frame and inject it into the live OpenAI session.
+
+    Unlike Gemini's snap which requires the session to have started in
+    snap/video mode, OpenAI accepts images at any time during a session.
+    If no SessionCamera is open we lazily grab a transient picamera2.
+    """
+    global last_frame_jpeg
+    sess = oai_session
+    if sess is None:
+        return JSONResponse(
+            {"error": "no active OpenAI session"}, status_code=400
+        )
+    try:
+        if oai_camera is not None:
+            jpeg = await asyncio.to_thread(oai_camera.grab_jpeg)
+        else:
+            # Transient picamera2 capture — slower (~1 s) but works without
+            # ?camera=true on session start.
+            from picamera2 import Picamera2
+            import io
+            def _transient() -> bytes:
+                cam = Picamera2()
+                cfg = cam.create_still_configuration(main={"size": (1024, 576)})
+                cam.configure(cfg)
+                cam.start()
+                time.sleep(0.4)
+                buf = io.BytesIO()
+                cam.capture_file(buf, format="jpeg")
+                cam.close()
+                return buf.getvalue()
+            jpeg = await asyncio.to_thread(_transient)
+
+        await sess.send_image(jpeg, prompt=prompt)
+        last_frame_jpeg = jpeg
+        return JSONResponse({"ok": True, "bytes": len(jpeg)})
+    except Exception as exc:
+        traceback.print_exc()
+        await log(f"OpenAI snap failed: {exc}", "error")
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.get("/api/agent/openai/settings")
+async def oai_settings_get() -> JSONResponse:
+    s = load_openai_settings()
+    return JSONResponse({
+        "model": OPENAI_MODEL,
+        "system_prompt": s.get("system_prompt", ""),
+        "default_system_prompt": DEFAULT_OPENAI_SETTINGS["system_prompt"],
+        "voice": s.get("voice", DEFAULT_OPENAI_SETTINGS["voice"]),
+        "reasoning_effort": s.get(
+            "reasoning_effort",
+            DEFAULT_OPENAI_SETTINGS["reasoning_effort"],
+        ),
+        "vad": s.get("vad", DEFAULT_OPENAI_SETTINGS["vad"]),
+        "audio": s.get("audio", DEFAULT_OPENAI_SETTINGS["audio"]),
+        "tools": describe_openai_tools(),
+        "live_active": oai_session is not None,
+        "has_api_key": bool(OPENAI_API_KEY),
+        "settings_path": str(PROJECT_ROOT / "dashboard" / "openai_settings.json"),
+    })
+
+
+@app.post("/api/agent/openai/settings")
+async def oai_settings_set(payload: dict) -> JSONResponse:
+    """Update OpenAI-specific tunables. Applied to the NEXT live session."""
+    try:
+        s = load_openai_settings()
+        if payload.get("reset"):
+            s = json.loads(json.dumps(DEFAULT_OPENAI_SETTINGS))
+        if "system_prompt" in payload:
+            sp = str(payload["system_prompt"]).strip()
+            if not sp:
+                return JSONResponse(
+                    {"error": "system_prompt cannot be empty"},
+                    status_code=400,
+                )
+            s["system_prompt"] = sp
+        if "voice" in payload:
+            s["voice"] = str(payload["voice"]).strip() or DEFAULT_OPENAI_SETTINGS["voice"]
+        if "reasoning_effort" in payload:
+            re_val = str(payload["reasoning_effort"]).strip().lower()
+            if re_val not in ("minimal", "low", "medium", "high"):
+                return JSONResponse(
+                    {"error": "reasoning_effort must be minimal|low|medium|high"},
+                    status_code=400,
+                )
+            s["reasoning_effort"] = re_val
+        if "vad" in payload and isinstance(payload["vad"], dict):
+            v = s.setdefault("vad", dict(DEFAULT_OPENAI_SETTINGS["vad"]))
+            if "threshold" in payload["vad"]:
+                t = float(payload["vad"]["threshold"])
+                if not (0.0 <= t <= 1.0):
+                    return JSONResponse(
+                        {"error": "vad.threshold must be 0.0..1.0"},
+                        status_code=400,
+                    )
+                v["threshold"] = t
+            for key in ("prefix_padding_ms", "silence_duration_ms"):
+                if key in payload["vad"]:
+                    n = int(payload["vad"][key])
+                    if not (0 <= n <= 5000):
+                        return JSONResponse(
+                            {"error": f"vad.{key} must be 0..5000"},
+                            status_code=400,
+                        )
+                    v[key] = n
+        if "audio" in payload and isinstance(payload["audio"], dict):
+            if "mic_gain" in payload["audio"]:
+                g = float(payload["audio"]["mic_gain"])
+                if not (0.1 <= g <= 20.0):
+                    return JSONResponse(
+                        {"error": "audio.mic_gain must be 0.1..20.0"},
+                        status_code=400,
+                    )
+                s.setdefault("audio", {})["mic_gain"] = g
+        save_openai_settings(s)
+        await log("OpenAI agent settings updated (takes effect next session)", "info")
+        await broadcast({"type": "agent_settings_updated", "provider": "openai"})
+        return JSONResponse({
+            "ok": True,
+            "system_prompt": s["system_prompt"],
+            "voice": s["voice"],
+            "reasoning_effort": s["reasoning_effort"],
+            "vad": s["vad"],
+            "audio": s["audio"],
+            "applies": "next OpenAI session — current session keeps its config",
+        })
+    except (ValueError, TypeError) as e:
+        return JSONResponse({"error": f"bad payload: {e}"}, status_code=400)
