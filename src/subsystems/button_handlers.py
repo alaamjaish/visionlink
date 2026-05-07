@@ -84,7 +84,7 @@ async def load_wearable_settings() -> dict[str, Any]:
         "b4_provider": "gemini",
         "b5_provider": "gemini",
         "b5_vision_mode": "snap_on_press",
-        "sos_photo_interval_s": 4,
+        "sos_photo_interval_s": 10,
         "sos_max_duration_s": 600,
         "sos_alert_recipient_role": "safety officer",
         "worker_id": os.getenv("WORKER_ID", "demo_worker_001"),

@@ -21,7 +21,8 @@ create table if not exists wearable_settings (
   --   'auto_snap_4s'   — auto-capture every 4 seconds (any provider)
   b5_vision_mode  text not null default 'snap_on_press',
   -- B6 SOS panic mode tunables
-  sos_photo_interval_s int not null default 4,
+  -- 10 s default = ~60 frames over the 10-min cap, ~$0.30 worst case
+  sos_photo_interval_s int not null default 10,
   sos_max_duration_s   int not null default 600,   -- 10 minutes hard cap
   sos_alert_recipient_role text not null default 'safety officer',
   -- Worker identity (defaults from .env, override here for demo)
