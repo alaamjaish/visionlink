@@ -70,7 +70,7 @@ BTN_AI_AGENT = 13      # Button 6: Agent commands
 ALL_BUTTONS = [BTN_SESSION, BTN_PHOTO_VIDEO, BTN_VOICE_NOTE,
                BTN_AI_CAMERA, BTN_AI_VOICE, BTN_AI_AGENT]
 
-BUTTON_DEBOUNCE_MS = 300    # Software debounce
+BUTTON_DEBOUNCE_MS = 50     # Software debounce (RPi.GPIO bouncetime). Tactile
 DOUBLE_PRESS_WINDOW = 0.5  # seconds
 
 # === AI ===
