@@ -80,8 +80,9 @@ async def load_wearable_settings() -> dict[str, Any]:
     if the row is missing or Supabase is unreachable."""
     defaults = {
         "id": "current",
-        "b4_provider": "openai",
-        "b5_provider": "openai",
+        # Default to Gemini — cheap, well-tested, won't burn OpenAI tokens by accident
+        "b4_provider": "gemini",
+        "b5_provider": "gemini",
         "b5_vision_mode": "snap_on_press",
         "sos_photo_interval_s": 4,
         "sos_max_duration_s": 600,
@@ -392,6 +393,20 @@ async def b5_ai_voice_vision(
         f"👁 B5 → AI ({provider}, vision={vision_mode}) starting", "info"
     )
     return await ai_starter(provider, gemini_mode, True)
+
+
+async def b_ai_stop_any(
+    log: Callable[[str, str], Awaitable[None]],
+    ai_stopper: Callable[[], Awaitable[dict[str, Any]]],
+) -> dict[str, Any]:
+    """Hard-stop whichever AI session is running (Gemini or OpenAI).
+
+    Wired to B4 double-click + B5 double-click — same gesture, same effect.
+    Independent of which provider was chosen; the dashboard knows what
+    task is alive and cancels it.
+    """
+    await log("🛑 Stop AI session (double-click)", "info")
+    return await ai_stopper()
 
 
 # ============================================================

@@ -320,6 +320,18 @@
     .sim-btn.b6:hover { border-color: var(--bad); }
     .sim-btn.recording { border-color: var(--warn); box-shadow: 0 0 0 2px var(--warn); }
     .sim-btn.session-open { border-color: var(--good); box-shadow: 0 0 0 1px var(--good); }
+    .sim-btn.ai-live {
+      border-color: var(--warn);
+      box-shadow: 0 0 0 2px var(--warn), 0 0 18px rgba(255, 200, 87, 0.25);
+      background: linear-gradient(180deg, rgba(255,200,87,0.10), var(--panel-2));
+    }
+    .sim-btn.ai-live .label::after {
+      content: " — DBL TO STOP";
+      font-size: 10px;
+      color: var(--warn);
+      letter-spacing: 0.08em;
+      margin-left: 6px;
+    }
     .sim-btn .gestures kbd {
       display: inline-block;
       padding: 0 5px; font-size: 10px;
@@ -376,15 +388,15 @@
           <span class="label">🎙 VOICE NOTE</span>
           <span class="gestures"><kbd>hold</kbd> record · release upload</span>
         </div>
-        <div class="sim-btn" data-btn="4" data-gestures="single">
+        <div class="sim-btn" data-btn="4" data-gestures="single,double">
           <span class="num">B4 · GPIO 5</span>
           <span class="label">🤖 AGENT</span>
-          <span class="gestures"><kbd>click</kbd> talk to agent</span>
+          <span class="gestures"><kbd>click</kbd> talk · <kbd>dbl</kbd> stop</span>
         </div>
-        <div class="sim-btn" data-btn="5" data-gestures="single">
+        <div class="sim-btn" data-btn="5" data-gestures="single,double">
           <span class="num">B5 · GPIO 6</span>
           <span class="label">👁 AGENT + EYES</span>
-          <span class="gestures"><kbd>click</kbd> show + ask</span>
+          <span class="gestures"><kbd>click</kbd> show + ask · <kbd>dbl</kbd> stop</span>
         </div>
         <div class="sim-btn b6" data-btn="6" data-gestures="single,double">
           <span class="num">B6 · GPIO 13</span>
@@ -782,6 +794,9 @@
             break;
           case 'live_state':
             setLive(data.connected, data.mode || currentMode);
+            // Visually mark B4 + B5 as armed-and-ready-to-stop while AI session lives
+            setSimButtonState(4, 'ai-live', !!data.connected);
+            setSimButtonState(5, 'ai-live', !!data.connected);
             break;
           case 'transcript':
             onTranscript(data.role, data.text);
@@ -891,13 +906,9 @@
 
     btnStop.addEventListener('click', async () => {
       btnStop.disabled = true;
-      if (currentProvider === 'openai') {
-        appendLog('info', 'Stopping OpenAI Realtime...');
-        await post('/api/live/oai/stop');
-      } else {
-        appendLog('info', 'Stopping Gemini Live...');
-        await post('/api/live/stop');
-      }
+      appendLog('info', 'Stopping any active AI session...');
+      // Unified stop — kills whichever session (Gemini or OpenAI) is alive
+      await post('/api/live/stop_any');
     });
 
     btnSnap.addEventListener('click', async () => {

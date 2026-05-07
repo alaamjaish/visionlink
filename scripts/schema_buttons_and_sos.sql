@@ -11,8 +11,10 @@
 create table if not exists wearable_settings (
   id text primary key default 'current',
   -- Per-button provider choice ('gemini' | 'openai')
-  b4_provider     text not null default 'openai',
-  b5_provider     text not null default 'openai',
+  -- Defaults to Gemini — cheaper, well-tested. Flip to 'openai' from the
+  -- ops dashboard's Wearable Settings panel for gpt-realtime-2 demos.
+  b4_provider     text not null default 'gemini',
+  b5_provider     text not null default 'gemini',
   -- B5 (vision): how the agent sees
   --   'snap_on_press'  — single image per button press during session
   --   'gemini_video'   — continuous 1 fps video stream (Gemini-only)

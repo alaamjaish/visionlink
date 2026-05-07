@@ -1132,7 +1132,7 @@ async def _button_ai_starter(provider: str, mode: str, camera: bool) -> dict[str
 
     # Refuse if any session is already running — pick a winner
     if (live_task and not live_task.done()) or (oai_task and not oai_task.done()):
-        return {"error": "session already running — STOP first"}
+        return {"error": "session already running — double-click to STOP first"}
 
     if provider == "openai":
         if not OPENAI_API_KEY:
@@ -1146,6 +1146,28 @@ async def _button_ai_starter(provider: str, mode: str, camera: bool) -> dict[str
         live_task = asyncio.create_task(run_live_session(mode=gemini_mode))
         return {"started": "gemini", "mode": gemini_mode}
     return {"error": f"unknown provider {provider!r}"}
+
+
+async def _button_ai_stopper() -> dict[str, Any]:
+    """Stop whichever AI session is running. Doesn't care about provider."""
+    global live_task, oai_task
+    stopped = []
+    if live_task and not live_task.done():
+        live_task.cancel()
+        stopped.append("gemini")
+    if oai_task and not oai_task.done():
+        oai_task.cancel()
+        stopped.append("openai")
+    if not stopped:
+        return {"status": "not_running"}
+    return {"status": "stopping", "stopped": stopped}
+
+
+@app.post("/api/live/stop_any")
+async def live_stop_any() -> JSONResponse:
+    """Unified stop — kills whichever AI session is running.
+    Used by the debug STOP button + B4/B5 double-click."""
+    return JSONResponse(await _button_ai_stopper())
 
 
 @app.post("/api/button/{n}/{event}")
@@ -1177,8 +1199,12 @@ async def button_dispatch(n: int, event: str) -> JSONResponse:
         result = await _run(lambda: bh.b3_voice_note_end(log, broadcast))
     elif (n, event) == (4, "single"):
         result = await _run(lambda: bh.b4_ai_voice_only(log, _button_ai_starter))
+    elif (n, event) == (4, "double"):
+        result = await _run(lambda: bh.b_ai_stop_any(log, _button_ai_stopper))
     elif (n, event) == (5, "single"):
         result = await _run(lambda: bh.b5_ai_voice_vision(log, _button_ai_starter))
+    elif (n, event) == (5, "double"):
+        result = await _run(lambda: bh.b_ai_stop_any(log, _button_ai_stopper))
     elif (n, event) == (6, "single"):
         result = await _run(lambda: bh.b6_warn_single(log, broadcast))
     elif (n, event) == (6, "double"):
