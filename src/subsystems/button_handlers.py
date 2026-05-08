@@ -212,19 +212,28 @@ async def b2_record_video(
 ) -> dict[str, Any]:
     """Record a short MP4 via the existing capture_av_mp4.sh helper, then
     upload it. Synchronous-ish — the simulator click waits ~duration_s."""
-    project_root = Path(__file__).resolve().parent.parent.parent
-    script = project_root / "scripts" / "capture_av_mp4.sh"
-    if not script.exists():
-        await log("capture_av_mp4.sh missing — video disabled", "error")
-        return {"error": "video script missing"}
-
     settings = await load_wearable_settings()
     sid = _state.open_session_id
     folder = sid or "_orphan"
     ts = int(time.time() * 1000)
     out_path = f"/tmp/vl_video_{ts}.mp4"
-    cmd = ["bash", str(script), out_path, str(duration_s)]
-    await log(f"🎥 recording {duration_s}s video...", "info")
+    duration_ms = int(duration_s * 1000)
+
+    # Video-only capture via rpicam-vid + libav -> MP4 in one shot.
+    # The legacy capture_av_mp4.sh muxed audio via arecord, but the I2S
+    # mic is held exclusively by audio_worker for B3 voice notes + AI
+    # sessions, so a parallel arecord always fails with EBUSY. Audio
+    # commentary on videos is a TODO that needs to route through the
+    # AudioBridge instead of opening ALSA directly.
+    cmd = [
+        "rpicam-vid",
+        "-o", out_path,
+        "--width", "1280", "--height", "720", "--framerate", "30",
+        "--codec", "libav", "--libav-format", "mp4",
+        "-t", str(duration_ms),
+        "-n",   # no preview window
+    ]
+    await log(f"🎥 recording {duration_s}s video (no audio)...", "info")
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
@@ -232,8 +241,9 @@ async def b2_record_video(
     )
     _, err = await proc.communicate()
     if proc.returncode != 0:
-        await log(f"video capture failed: {err.decode(errors='replace')}", "error")
-        return {"error": "video capture failed"}
+        msg = err.decode(errors='replace')[:300] or "(no stderr)"
+        await log(f"video capture failed: {msg}", "error")
+        return {"error": "video capture failed", "detail": msg}
 
     try:
         with open(out_path, "rb") as f:
@@ -266,7 +276,19 @@ async def b2_record_video(
 async def b3_voice_note_start(
     log: Callable[[str, str], Awaitable[None]],
     bridge: Any,   # AudioBridge — duck-typed to avoid circular import
+    is_ai_session_running: Optional[Callable[[], bool]] = None,
 ) -> dict[str, Any]:
+    # GUARD: voice notes share the AudioBridge mic with B4/B5/B6 AI sessions.
+    # If both consume the mic concurrently, blocks get split between them and
+    # neither stream is intelligible. Refuse instead of silently corrupting.
+    if is_ai_session_running and is_ai_session_running():
+        await log(
+            "🎙 voice note BLOCKED — AI session is using the mic. "
+            "Double-click B4/B5 to stop the session, then try again.",
+            "warning",
+        )
+        return {"error": "AI session active — cannot record voice note"}
+
     async with _state_lock:
         if _state.voice_note_recording:
             return {"already_recording": True}
@@ -489,6 +511,10 @@ async def b6_sos_trigger(
     await log(f"🆘 SOS PANIC MODE ARMED — id={sos_id}", "error")
     await broadcast({"type": "sos_armed", "id": sos_id})
 
+    # Auto-close any open doc session — worker is in an emergency, not a
+    # paperwork moment. Fire-and-forget so we don't block SOS startup.
+    asyncio.create_task(_sos_auto_close_open_session(sos_id, log, broadcast))
+
     # Fire-and-forget alert email (don't block on it)
     asyncio.create_task(_sos_send_alert_email(sos_id, settings, sb))
 
@@ -520,6 +546,49 @@ async def b6_sos_trigger(
         _state.sos_task = task
 
     return {"ok": True, "sos_id": sos_id}
+
+
+async def _sos_auto_close_open_session(
+    sos_id: str,
+    log: Callable[[str, str], Awaitable[None]],
+    broadcast: Callable[[dict[str, Any]], Awaitable[None]],
+) -> None:
+    """If a doc session was open when SOS triggered, close it automatically.
+    Worker is dealing with an emergency, not paperwork. Captures already
+    written into the session keep their reference; future captures during
+    the SOS go to _orphan/."""
+    async with _state_lock:
+        open_sid = _state.open_session_id
+
+    if not open_sid:
+        return
+
+    sb = _sb_client()
+    def _close():
+        sb.table("sessions").update({
+            "ended_at": _now_iso(),
+            "status":   "closed",
+        }).eq("id", open_sid).execute()
+    try:
+        await asyncio.to_thread(_close)
+    except Exception as e:
+        await log(f"⚠ SOS auto-close failed for session {open_sid}: {e}", "warning")
+        return
+
+    async with _state_lock:
+        _state.open_session_id = None
+        _state.open_session_label = None
+
+    await log(
+        f"📁 Auto-closed open doc session {open_sid[:8]} due to SOS {sos_id[:8]}",
+        "info",
+    )
+    await broadcast({
+        "type":       "session_auto_closed",
+        "session_id": open_sid,
+        "reason":     "sos",
+        "sos_id":     sos_id,
+    })
 
 
 async def _sos_send_alert_email(
