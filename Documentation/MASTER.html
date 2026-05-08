@@ -1,0 +1,1379 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>VisionLink — Master Reference</title>
+<style>
+@page {
+  size: A4;
+  margin: 22mm 18mm 22mm 18mm;
+  @bottom-center {
+    content: "VisionLink — Master Reference   ·   Page " counter(page) " of " counter(pages);
+    font-family: 'Inter', 'Helvetica Neue', sans-serif;
+    font-size: 9pt;
+    color: #888;
+  }
+}
+@page :first {
+  @bottom-center { content: ""; }
+}
+* { box-sizing: border-box; }
+html, body {
+  font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+  font-size: 10.5pt;
+  line-height: 1.55;
+  color: #1c1c1c;
+}
+h1 {
+  font-size: 22pt;
+  font-weight: 700;
+  color: #0d2c4a;
+  margin-top: 0;
+  margin-bottom: 0.6em;
+  padding-bottom: 0.25em;
+  border-bottom: 3px solid #0d2c4a;
+  page-break-before: always;
+  page-break-after: avoid;
+}
+h1:first-of-type { page-break-before: auto; }
+h2 {
+  font-size: 15pt;
+  font-weight: 700;
+  color: #0d2c4a;
+  margin-top: 1.4em;
+  margin-bottom: 0.4em;
+  page-break-after: avoid;
+}
+h3 {
+  font-size: 12pt;
+  font-weight: 700;
+  color: #2a4d76;
+  margin-top: 1.1em;
+  margin-bottom: 0.3em;
+  page-break-after: avoid;
+}
+h4 { font-size: 11pt; font-weight: 700; color: #3a5a85; margin-top: 0.8em; margin-bottom: 0.25em; }
+p { margin: 0.45em 0; orphans: 3; widows: 3; }
+ul, ol { margin: 0.4em 0 0.6em 1.2em; }
+li { margin-bottom: 0.18em; }
+strong { color: #0d2c4a; }
+code {
+  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+  font-size: 9.3pt;
+  background: #f1f4f8;
+  padding: 0.5pt 4pt;
+  border-radius: 3pt;
+  color: #b13c2e;
+}
+pre {
+  background: #f7f9fc;
+  border: 1px solid #d8dde4;
+  border-radius: 4pt;
+  padding: 8pt 10pt;
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-size: 8.8pt;
+  line-height: 1.35;
+  overflow: hidden;
+  page-break-inside: avoid;
+  white-space: pre-wrap;
+}
+pre code { background: transparent; padding: 0; color: #1c1c1c; }
+blockquote {
+  border-left: 3pt solid #0d6cb6;
+  margin: 0.6em 0;
+  padding: 0.4em 0.9em;
+  color: #354c62;
+  background: #f3f8fd;
+  border-radius: 0 3pt 3pt 0;
+  page-break-inside: avoid;
+}
+blockquote p { margin: 0.2em 0; }
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.7em 0 1em 0;
+  font-size: 9.7pt;
+  page-break-inside: avoid;
+}
+th, td {
+  border: 1px solid #cfd6df;
+  padding: 4pt 7pt;
+  text-align: left;
+  vertical-align: top;
+}
+th {
+  background: #0d2c4a;
+  color: #fff;
+  font-weight: 600;
+  font-size: 9.5pt;
+  letter-spacing: 0.02em;
+}
+tr:nth-child(even) td { background: #f5f7fa; }
+hr {
+  border: none;
+  border-top: 1px solid #d8dde4;
+  margin: 1.5em 0;
+}
+a { color: #0d6cb6; text-decoration: none; }
+.cover {
+  text-align: center;
+  padding-top: 60mm;
+  page-break-after: always;
+}
+.cover h1 {
+  font-size: 36pt;
+  border: none;
+  page-break-before: auto;
+  margin-bottom: 0.1em;
+  color: #0d2c4a;
+}
+.cover .subtitle {
+  font-size: 14pt;
+  color: #2a4d76;
+  margin-bottom: 2em;
+}
+.cover .meta {
+  font-size: 11pt;
+  color: #5b6b7e;
+  margin-top: 12em;
+}
+.cover .accent {
+  display: inline-block;
+  padding: 6pt 14pt;
+  background: #0d2c4a;
+  color: #fff;
+  border-radius: 4pt;
+  letter-spacing: 0.12em;
+  font-size: 10pt;
+  font-weight: 600;
+  margin-bottom: 1.2em;
+}
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="accent">GRADUATION PROJECT · 2026</div>
+  <h1>VisionLink</h1>
+  <div class="subtitle">A Wearable Industrial Assistant on Raspberry Pi 4B</div>
+  <div class="meta">
+    Master Technical Reference<br>
+    Team: Alaa · Ali Salih · F-Alaa · Defne<br>
+    Branch <code>openai-sdk</code> · 2026-05-08
+  </div>
+</div>
+
+<p>This document explains every layer of VisionLink — the physical hardware, the
+software stack, the cloud services, the AI models, the database, the two web
+dashboards, and the end-to-end journey of every button press. It is written
+to be readable from cover to cover and to answer any technical question
+that might come up in a project review.</p>
+<hr />
+<h1>1. What VisionLink Is</h1>
+<p>VisionLink is a wearable assistant for factory workers, built like smart
+glasses (or a helmet attachment) and powered by a Raspberry Pi 4B. The
+worker has six physical buttons within reach. Each button triggers a
+different hands-free workflow — capturing evidence, asking the AI a
+question, or raising an emergency.</p>
+<p>Everything the worker captures is sent to a cloud database where a
+supervisor watches it stream in live on a web dashboard.</p>
+<p>The system has <strong>two operating modes</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Buttons</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Documentation Mode</strong></td>
+<td>B1, B2, B3</td>
+<td>Hands-free recording of work activity — sessions, photos, videos, voice notes</td>
+</tr>
+<tr>
+<td><strong>AI Assistant Mode</strong></td>
+<td>B4, B5, B6</td>
+<td>Voice conversation with an AI that can see, search the parts catalog, log incidents, request spare parts, and send emails</td>
+</tr>
+</tbody>
+</table>
+<p>A separate <strong>panic mode</strong> rides on B6 — a double-click triggers an SOS
+that emails the safety officer, starts an emergency-trained AI session,
+and streams live camera frames to the supervisor until they manually
+shut it off.</p>
+<hr />
+<h1>2. The Hardware</h1>
+<p>VisionLink runs on consumer Raspberry Pi hardware with off-the-shelf
+sensors. Total parts cost is under €120.</p>
+<h2>2.1 Component List</h2>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Model</th>
+<th>Role</th>
+<th>Connection</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Computer</strong></td>
+<td>Raspberry Pi 4B (8 GB RAM)</td>
+<td>The brain. Runs all software locally.</td>
+<td>USB-C 5 V / 3 A</td>
+</tr>
+<tr>
+<td><strong>Camera</strong></td>
+<td>Pi Camera Module 3</td>
+<td>Photos, videos, live frames for AI vision and SOS</td>
+<td>CSI ribbon cable</td>
+</tr>
+<tr>
+<td><strong>Microphone</strong></td>
+<td>SPH0645LM4H (GY-SPH0645 board)</td>
+<td>Voice input for the AI and voice notes</td>
+<td>I²S digital — GPIO 18 (BCLK), 19 (LRCLK), 20 (data)</td>
+</tr>
+<tr>
+<td><strong>Amplifier</strong></td>
+<td>MAX98357A</td>
+<td>Drives the speaker from a digital I²S signal</td>
+<td>I²S digital — GPIO 18 (BCLK), 19 (LRCLK), 21 (data)</td>
+</tr>
+<tr>
+<td><strong>Speaker</strong></td>
+<td>8 Ω 1 W oval (Adafruit-style)</td>
+<td>Audio output</td>
+<td>Screw terminals on the amp</td>
+</tr>
+<tr>
+<td><strong>Buttons</strong></td>
+<td>6 × tactile push-button switches</td>
+<td>Worker input</td>
+<td>GPIO 17, 27, 22, 5, 6, 13 with shared GND</td>
+</tr>
+<tr>
+<td><strong>Power</strong></td>
+<td>USB-C power supply or USB power bank</td>
+<td>Standalone power for the wearable</td>
+<td>USB-C</td>
+</tr>
+</tbody>
+</table>
+<h2>2.2 GPIO Pin Map</h2>
+<p>The Pi 4B exposes a 40-pin GPIO header. VisionLink uses the following
+pins (BCM numbering):</p>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>BCM GPIO</th>
+<th>Physical Pin</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>B1 — Documentation Session</td>
+<td>17</td>
+<td>11</td>
+<td>Falling edge interrupt, internal pull-up</td>
+</tr>
+<tr>
+<td>B2 — Photo / Video</td>
+<td>27</td>
+<td>13</td>
+<td>Falling edge interrupt, internal pull-up</td>
+</tr>
+<tr>
+<td>B3 — Voice Note</td>
+<td>22</td>
+<td>15</td>
+<td>Falling edge interrupt, internal pull-up</td>
+</tr>
+<tr>
+<td>B4 — AI Voice</td>
+<td>5</td>
+<td>29</td>
+<td>Falling edge interrupt, internal pull-up</td>
+</tr>
+<tr>
+<td>B5 — AI Voice + Vision</td>
+<td>6</td>
+<td>31</td>
+<td>Falling edge interrupt, internal pull-up</td>
+</tr>
+<tr>
+<td>B6 — Agent / SOS</td>
+<td>13</td>
+<td>33</td>
+<td>Falling edge interrupt, internal pull-up</td>
+</tr>
+<tr>
+<td>Mic BCLK + Amp BCLK</td>
+<td>18</td>
+<td>12</td>
+<td>Shared I²S bit clock</td>
+</tr>
+<tr>
+<td>Mic LRCLK + Amp LRCLK</td>
+<td>19</td>
+<td>35</td>
+<td>Shared I²S word-select clock</td>
+</tr>
+<tr>
+<td>Mic Data Out</td>
+<td>20</td>
+<td>38</td>
+<td>Microphone audio bits</td>
+</tr>
+<tr>
+<td>Amp Data In</td>
+<td>21</td>
+<td>40</td>
+<td>Amplifier audio bits</td>
+</tr>
+<tr>
+<td>Mic 3 V</td>
+<td>—</td>
+<td>1</td>
+<td>3.3 V power for mic board</td>
+</tr>
+<tr>
+<td>Amp Vin</td>
+<td>—</td>
+<td>2</td>
+<td>5 V power for amplifier</td>
+</tr>
+<tr>
+<td>Common Ground</td>
+<td>—</td>
+<td>6, 14, 20, 34, 39</td>
+<td>Shared ground rail</td>
+</tr>
+</tbody>
+</table>
+<h2>2.3 The Wiring Philosophy</h2>
+<p>Each button is wired between its GPIO pin and ground. Pressing the
+button shorts the pin to ground, which the Pi's internal pull-up
+resistor detects as a falling edge. A short Python program listens for
+those edges and turns each press into a software event with debounce,
+double-press, and hold-to-record gestures.</p>
+<p>The microphone and amplifier share the same clock lines (a property of
+the I²S bus protocol) so all four audio wires plus power and ground
+fit comfortably alongside the buttons on a single breadboard.</p>
+<hr />
+<h1>3. The Software Stack</h1>
+<p>VisionLink has three software surfaces and one cloud:</p>
+<pre><code>┌──────────────────────────────────────────────────────────────────┐
+│  CLOUD                                                           │
+│  Supabase (PostgreSQL + Storage + Realtime)                      │
+│  Google Gemini · OpenAI · Anthropic Claude · Gmail SMTP · Resend │
+└──────────────────────────────────────────────────────────────────┘
+              ▲  HTTPS · WebSocket · Realtime channel
+              │
+┌──────────────────────────────────────────────────────────────────┐
+│  RASPBERRY PI 4B (LOCAL)                                         │
+│                                                                  │
+│  ┌────────────────────────┐    ┌───────────────────────────────┐ │
+│  │  GPIO Bridge Process   │    │   FastAPI Dashboard           │ │
+│  │  scripts/gpio_bridge.py│───►│   dashboard/server.py :8000   │ │
+│  │  Listens for falling   │HTTP│   - 6-button simulator UI     │ │
+│  │  edges on 6 GPIO pins  │    │   - Voice command center      │ │
+│  └────────────────────────┘    │   - audio_worker subprocess   │ │
+│                                │   - Camera lock manager       │ │
+│                                │   - WebSocket transcript      │ │
+│                                └───────────────────────────────┘ │
+│                                                                  │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │  Next.js Ops Dashboard                                      │ │
+│  │  ops/  (Next.js 16 + React 19)  :3000                       │ │
+│  │  - / Agent page (9 supervisor panels)                       │ │
+│  │  - /documentation page (Sessions + Captures)                │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────┘
+              ▲
+              │  GPIO  ·  CSI ribbon  ·  I²S
+              │
+┌──────────────────────────────────────────────────────────────────┐
+│  PHYSICAL WEARABLE                                               │
+│  6 buttons · Pi Camera 3 · I²S mic · I²S amp + speaker           │
+└──────────────────────────────────────────────────────────────────┘
+</code></pre>
+<h2>3.1 Languages</h2>
+<table>
+<thead>
+<tr>
+<th>Language</th>
+<th>Where it runs</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Python 3.13</strong></td>
+<td>Raspberry Pi</td>
+<td>Backend FastAPI server, GPIO handling, AI integration, audio capture, picamera2 control, all cloud API calls</td>
+</tr>
+<tr>
+<td><strong>TypeScript</strong></td>
+<td>Browser (compiled to JS by Next.js)</td>
+<td>Ops dashboard — 9 live data panels with full CRUD</td>
+</tr>
+<tr>
+<td><strong>JavaScript (vanilla)</strong></td>
+<td>Browser</td>
+<td>Voice command center — the simulated wearable UI on the worker side</td>
+</tr>
+<tr>
+<td><strong>HTML / Tailwind CSS 4</strong></td>
+<td>Browser</td>
+<td>Layout and styling for both dashboards</td>
+</tr>
+<tr>
+<td><strong>Bash</strong></td>
+<td>Raspberry Pi</td>
+<td>System orchestration, video capture script (legacy), launch scripts</td>
+</tr>
+<tr>
+<td><strong>SQL</strong></td>
+<td>Supabase</td>
+<td>Database schema, indexes, realtime publication, row-level security policies</td>
+</tr>
+</tbody>
+</table>
+<h2>3.2 Frameworks and Libraries</h2>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Technology</th>
+<th>Why it was chosen</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>HTTP / WebSocket server</td>
+<td><strong>FastAPI</strong> + <strong>Uvicorn</strong></td>
+<td>Python-native, async-first, automatic OpenAPI docs, perfect for real-time event handling</td>
+</tr>
+<tr>
+<td>Frontend (supervisor)</td>
+<td><strong>Next.js 16</strong> + <strong>React 19</strong></td>
+<td>App-router, server components, Turbopack — modern fast dev experience</td>
+</tr>
+<tr>
+<td>Styling</td>
+<td><strong>Tailwind CSS 4</strong></td>
+<td>Utility-first, no separate CSS files, consistent design system</td>
+</tr>
+<tr>
+<td>Database client (Python)</td>
+<td><strong>supabase-py</strong></td>
+<td>Official, supports realtime subscriptions and storage uploads</td>
+</tr>
+<tr>
+<td>Database client (browser)</td>
+<td><strong>@supabase/supabase-js</strong></td>
+<td>Official, used for live subscriptions and direct CRUD</td>
+</tr>
+<tr>
+<td>GPIO handling</td>
+<td><strong>RPi.GPIO 0.7.2</strong> + <strong>lgpio</strong> + <strong>gpiozero</strong></td>
+<td>Standard Pi GPIO library; falling-edge interrupts with debounce</td>
+</tr>
+<tr>
+<td>Camera</td>
+<td><strong>picamera2</strong></td>
+<td>Official modern Pi Camera library with hardware MMAL acceleration</td>
+</tr>
+<tr>
+<td>Audio capture/playback</td>
+<td><strong>sounddevice</strong> + <strong>arecord/aplay</strong> + custom AudioBridge</td>
+<td>Direct I²S device access, low-latency mic feed</td>
+</tr>
+<tr>
+<td>Voice AI</td>
+<td><strong>google-genai</strong> SDK (Gemini Live) and <strong>OpenAI SDK</strong> (Realtime API)</td>
+<td>Bidirectional streaming voice + vision</td>
+</tr>
+<tr>
+<td>Email</td>
+<td><strong>smtplib</strong> (Gmail) and <strong>resend</strong> (Resend)</td>
+<td>Two providers — Gmail is the default</td>
+</tr>
+<tr>
+<td>QR codes</td>
+<td><strong>pyzbar</strong></td>
+<td>Pi Camera frame → QR string decode</td>
+</tr>
+<tr>
+<td>Image utilities</td>
+<td><strong>Pillow</strong>, <strong>opencv-python-headless</strong></td>
+<td>Resizing, encoding, JPEG compression</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h1>4. The Six Buttons — Documentation Mode (B1, B2, B3)</h1>
+<p>The first three buttons let the worker capture evidence of a shift
+without ever taking off their gloves. Everything captured during a
+&quot;session&quot; is automatically grouped together in the database and shown
+to the supervisor in real time.</p>
+<h2>4.1 B1 — Documentation Session toggle (GPIO 17)</h2>
+<p><strong>Single press.</strong> Opens or closes a documentation session — the
+container that bundles together all photos, videos, and voice notes
+captured during that period of work.</p>
+<p><strong>The journey:</strong></p>
+<ol>
+<li>Worker presses B1. The pin drops from 3.3 V to 0 V.</li>
+<li>The Linux kernel raises a falling-edge interrupt on GPIO 17.</li>
+<li><code>scripts/gpio_bridge.py</code> (a small Python sidecar) receives the
+interrupt via RPi.GPIO and POSTs <code>/api/button/1/single</code> to the
+FastAPI dashboard on port 8000.</li>
+<li>The dashboard dispatches to the <code>b1_doc_session_toggle</code> handler.</li>
+<li>If no session is currently open: insert a new row into the
+<code>sessions</code> table in Supabase, with the current timestamp and a
+label like <em>&quot;Session 2026-05-08 14:32&quot;</em>. Status: <code>open</code>.</li>
+<li>If a session is already open: update that row to <code>status='closed'</code>
+and <code>ended_at=now()</code>.</li>
+<li>Supabase pushes the change over its realtime channel. Within
+~200 ms, the supervisor's <em>Documentation</em> page reflects the new
+state — the open-session row glows green, and the <em>Sessions</em> count
+ticks up.</li>
+</ol>
+<h2>4.2 B2 — Photo / Video (GPIO 27)</h2>
+<p><strong>Single press = photo.</strong> <strong>Double press = 5-second silent video.</strong></p>
+<p><strong>Photo journey:</strong></p>
+<ol>
+<li>B2 single press → <code>b2_take_photo</code> handler.</li>
+<li>picamera2 grabs a 1024×576 JPEG from the Pi Camera 3.</li>
+<li>The JPEG bytes are uploaded to the Supabase Storage bucket
+<code>session-assets</code> under the path <code>&lt;session_id&gt;/photo_&lt;ts&gt;.jpg</code>.</li>
+<li>A row is inserted into <code>session_assets</code> with <code>kind='photo'</code> and the
+storage path.</li>
+<li>The supervisor's <em>Captures</em> panel shows the new photo as a
+thumbnail. Clicking it opens a full-size modal preview.</li>
+</ol>
+<p><strong>Video journey:</strong></p>
+<ol>
+<li>B2 double press → <code>b2_record_video</code> handler.</li>
+<li>A subprocess runs <code>rpicam-vid --codec libav --libav-format mp4 -t 5000</code>
+which produces a 5-second 1280×720 30 fps MP4 directly.</li>
+<li>The MP4 file is uploaded to the same <code>session-assets</code> bucket.</li>
+<li>Row in <code>session_assets</code> with <code>kind='video'</code> and <code>duration_s=5</code>.</li>
+<li>Plays inline in the supervisor's <em>Captures</em> panel via the browser's
+native <code>&lt;video&gt;</code> element.</li>
+</ol>
+<blockquote>
+<p><strong>Why no audio in the video.</strong> The I²S microphone is held
+exclusively by <code>audio_worker</code> (the always-running subprocess that
+feeds AI sessions and B3 voice notes). A parallel <code>arecord</code> would
+fail with <em>device busy</em>. Audio mux through the existing AudioBridge
+is a planned improvement.</p>
+</blockquote>
+<h2>4.3 B3 — Voice Note (GPIO 22)</h2>
+<p><strong>Hold to record. Release to upload.</strong></p>
+<p><strong>Journey:</strong></p>
+<ol>
+<li>B3 press → <code>hold_start</code> event → <code>b3_voice_note_start</code> handler.</li>
+<li>The handler subscribes to the AudioBridge mic stream and starts
+accumulating raw 16 kHz mono PCM bytes in memory.</li>
+<li>Worker speaks (e.g. <em>&quot;check valve B7 tomorrow morning&quot;</em>).</li>
+<li>Worker releases B3 → <code>hold_end</code> event → <code>b3_voice_note_end</code> handler.</li>
+<li>The accumulated PCM is wrapped in a WAV header.</li>
+<li>The WAV file is uploaded to <code>session-assets/&lt;session_id&gt;/voice_&lt;ts&gt;.wav</code>.</li>
+<li>A row in <code>session_assets</code> with <code>kind='voice_note'</code> and <code>duration_s</code>
+computed from the press duration.</li>
+<li>The supervisor's <em>Captures</em> panel shows a playable <code>&lt;audio&gt;</code>
+element with controls.</li>
+</ol>
+<blockquote>
+<p><strong>Guard.</strong> B3 refuses to start while any AI session (B4, B5, or B6)
+is using the microphone. The user gets an explicit error rather
+than a corrupted recording where the audio is split between two
+consumers.</p>
+</blockquote>
+<hr />
+<h1>5. The Six Buttons — AI Assistant Mode (B4, B5, B6)</h1>
+<p>The last three buttons turn VisionLink into a hands-free conversational
+agent. Pressing one of these starts a streaming voice session with a
+cloud AI model. The AI hears the worker through the I²S mic and speaks
+back through the I²S amplifier and speaker.</p>
+<h2>5.1 B4 — AI Voice (GPIO 5)</h2>
+<p><strong>Single press to start, double press to stop.</strong></p>
+<p><strong>Journey:</strong></p>
+<ol>
+<li>B4 single press → <code>b4_ai_voice_only</code> handler.</li>
+<li>The handler reads <code>wearable_settings.b4_provider</code> from Supabase —
+either <code>gemini</code> or <code>openai</code>. The supervisor controls this from the
+Wearable Settings panel.</li>
+<li>A bidirectional WebSocket connection is opened to either Google
+Gemini Live API or OpenAI Realtime API.</li>
+<li>The local AudioBridge starts forwarding mic audio to the model and
+playing model responses back through the speaker.</li>
+<li>The same six tools (parts lookup, incident logging, etc.) are
+exposed to the model so it can take action on behalf of the worker.</li>
+<li>Live transcripts stream back over a WebSocket to the voice command
+center and appear in real time.</li>
+<li>A double-press of B4 closes the WebSocket and stops audio routing.</li>
+</ol>
+<h2>5.2 B5 — AI Voice + Vision (GPIO 6)</h2>
+<p><strong>Single press to start, single press again to take a snapshot,
+double press to stop.</strong></p>
+<p>This is the most powerful button. It opens an AI session that can
+<em>see</em> through the Pi Camera in addition to hearing the worker.</p>
+<p><strong>Journey:</strong></p>
+<ol>
+<li>B5 single press → <code>b5_ai_voice_vision</code> handler.</li>
+<li>Same as B4 but the AI session is configured with a vision channel.</li>
+<li>By default the wearable uses <strong>snap on press</strong>: the first B5 press
+starts the session and triggers an automatic camera snapshot to
+show the AI what the worker is looking at; subsequent single
+presses inject fresh snapshots into the same conversation.</li>
+<li>Other vision modes selectable from the Wearable Settings panel:
+<code>gemini_video</code> (continuous 1 fps stream — Gemini-only) and
+<code>auto_snap_4s</code> (auto-snap every 4 seconds — both providers).</li>
+<li>Worker can ask things like <em>&quot;what's wrong with this gauge?&quot;</em> or
+<em>&quot;what's this part code?&quot;</em> — the AI sees the image and responds.</li>
+<li>Behind the scenes: each snapshot is a small JPEG sent to the model
+over the same WebSocket as the audio stream.</li>
+</ol>
+<h2>5.3 B6 — Agent / SOS Panic Mode (GPIO 13)</h2>
+<p>B6 has two distinct behaviors:</p>
+<ul>
+<li><strong>Single press:</strong> the worker is warned via a toast message that
+SOS requires a double-click — pocket-dial protection.</li>
+<li><strong>Double press:</strong> a full SOS panic mode is triggered.</li>
+</ul>
+<p><strong>SOS journey (the most complex flow in the entire system):</strong></p>
+<ol>
+<li>B6 double press → <code>b6_sos_trigger</code> handler.</li>
+<li>A new row is inserted into <code>sos_events</code> with worker identity and
+<code>triggered_at = now()</code>. The row's UUID becomes the SOS ID.</li>
+<li><strong>Email the safety officer.</strong> A fire-and-forget task uses the
+<code>send_report</code> tool internally to look up the safety officer's
+email from the <code>managers</code> table and send an alert.</li>
+<li><strong>Auto-close any open documentation session.</strong> Worker shouldn't be
+doing paperwork in an emergency, so the open session is updated to
+<code>status='closed'</code> automatically.</li>
+<li><strong>Start an OpenAI Realtime AI session</strong> with a calm-emergency
+system prompt — <em>&quot;Stay calm, ask short questions, describe what
+you see, tell them help is on the way. Do NOT call any tools right
+now.&quot;</em> The voice &quot;Cedar&quot; with reasoning_effort &quot;medium&quot;.</li>
+<li><strong>Auto-snap a fresh camera frame every N seconds</strong> (default
+10 seconds, tunable). Each frame is uploaded to
+<code>sos/&lt;sos_id&gt;/frame_&lt;ts&gt;.jpg</code>, then injected into the OpenAI
+session via <code>send_image()</code>. The <code>frames_sent</code> counter on the
+<code>sos_events</code> row increments.</li>
+<li><strong>Stream the live transcript</strong> of what the AI says into
+<code>sos_events.live_transcript</code>. The supervisor watches the stream
+appear character-by-character on their dashboard.</li>
+<li><strong>The supervisor's SOS panel goes red and starts pulsing</strong> with
+a two-tone audible alarm (Web Audio API — no MP3 file needed).</li>
+<li><strong>The supervisor can shut it off.</strong> A big red SHUT OFF button
+opens a modal asking for the supervisor's name and reason. On
+confirm, the row is updated to <code>resolved=true</code> with the supervisor
+name. The wearable is polling the row every 2 seconds — within
+~2 s, the AI session is closed, the auto-snap loop stops, and the
+wearable falls silent.</li>
+<li><strong>Hard timeout.</strong> If the supervisor never sees the alert, a
+server-side <code>asyncio.wait_for</code> auto-resolves the SOS after the
+configured <code>sos_max_duration_s</code> (default 600 s = 10 minutes) to
+bound the audio session length and storage cost.</li>
+<li>The worker can also cancel the SOS themselves with another B6
+double-click — the running task's resolution watcher sees the
+flipped flag and tears everything down.</li>
+</ol>
+<hr />
+<h1>6. The AI Brains</h1>
+<p>VisionLink uses three different cloud AI providers, each chosen for a
+specific strength.</p>
+<h2>6.1 Google Gemini Live (default)</h2>
+<p><strong>Provider:</strong> Google AI Studio
+<strong>Model:</strong> <code>gemini-2.5-flash</code> (and <code>gemini-3.1-flash-live-preview</code> for
+streaming)
+<strong>Where used:</strong> B4 voice sessions, B5 vision sessions, default for
+both buttons unless overridden in Wearable Settings.</p>
+<p><strong>Why:</strong> Multimodal native (audio + image + text in the same stream),
+fastest first-token latency among the three providers, lowest cost
+per minute. Excellent at general conversation and tool calling.</p>
+<h2>6.2 OpenAI GPT Realtime 2</h2>
+<p><strong>Provider:</strong> OpenAI
+<strong>Model:</strong> <code>gpt-realtime-2</code> (released 2026-05-07)
+<strong>Where used:</strong> Selectable alternative for B4 and B5; <strong>always used
+for B6 SOS</strong> regardless of B4/B5 settings.</p>
+<p><strong>Why:</strong> OpenAI's instruction-following is more reliable for tightly
+scripted personas like <em>calm emergency operator</em>. The voice model has
+the best perceived &quot;presence&quot; for a high-stakes situation. Speed
+parameter set to 1.2× by default to combat the model's natural
+slow pacing.</p>
+<h2>6.3 Anthropic Claude (Sonnet/Opus 4.x)</h2>
+<p><strong>Provider:</strong> Anthropic
+<strong>Model:</strong> Claude Sonnet 4.6 (planned for email drafting)
+<strong>Where used:</strong> Currently a research target for the B6 <em>agent
+command</em> path — <em>&quot;send a report saying X happened&quot;</em> would route the
+voice transcript to Claude, which writes a polished email body, and
+Resend or Gmail SMTP delivers it.</p>
+<p><strong>Why:</strong> Best long-form writing quality among the three. Better at
+maintaining a professional tone. The plan is to use Claude for the
+drafting step <em>only</em> — Gemini still handles the voice conversation.</p>
+<h2>6.4 Soniox (planned alternative STT)</h2>
+<p><strong>Provider:</strong> Soniox
+<strong>Where used:</strong> A fallback speech-to-text path if Gemini Live's
+built-in transcription is insufficient. Currently a stub in
+<code>src/ai/stt.py</code>.</p>
+<p><strong>Why:</strong> Industry-standard standalone STT with streaming support.
+Could be useful for offline transcripts or for quality verification
+of what Gemini &quot;heard.&quot;</p>
+<hr />
+<h1>7. The Tools the AI Can Call</h1>
+<p>Both Gemini and OpenAI sessions expose the same six tools. Calling
+them is how the AI takes real action — looking up data in the
+database, writing rows, sending emails. Without tools the AI could
+only talk; with them, it can <em>do</em>.</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Tool</th>
+<th>What it does</th>
+<th>Touches database</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>lookup_component(query)</code></td>
+<td>Searches the <code>components</code> parts catalog by part code (exact) then name (fuzzy). Returns up to 3 rows with torque spec, maintenance interval, safety notes.</td>
+<td>Read</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>log_incident(description, category?, severity?, location?)</code></td>
+<td>Inserts a row into <code>incidents</code> whenever the worker reports something wrong. Categories: <code>safety</code>, <code>equipment</code>, <code>leak</code>, <code>damage</code>, <code>other</code>. Severities: <code>low</code>, <code>medium</code>, <code>high</code>, <code>critical</code>.</td>
+<td>Write</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>mark_task_complete(task_query)</code></td>
+<td>Fuzzy-matches the worker's spoken description against open rows in <code>worker_tasks</code> and marks the best match <code>complete</code>.</td>
+<td>Write</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>get_my_assignments(include_complete?)</code></td>
+<td>Lists the worker's pending or all tasks. Used when the worker says <em>&quot;what's on my list today?&quot;</em></td>
+<td>Read</td>
+</tr>
+<tr>
+<td>5</td>
+<td><code>request_part(part_query, quantity?, urgency?, reason?)</code></td>
+<td>Inserts a row into <code>part_requests</code> so procurement sees that the worker needs spare parts.</td>
+<td>Write</td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>send_report(report_name, recipient_role?, recipient_name?, recipient_email?, custom_message?)</code></td>
+<td>The killer tool. Looks up a template by name from <code>report_templates</code>, looks up a recipient by role from <code>managers</code>, auto-injects live data from <code>incidents</code>/<code>worker_tasks</code>/<code>part_requests</code>, sends via Gmail SMTP (default) or Resend, and logs the result to <code>sent_reports</code>.</td>
+<td>Read + Write + Email</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Three absolute rules in the system prompt</strong> prevent the most common
+failure modes:</p>
+<ol>
+<li><strong>Never lie about completing actions.</strong> If the AI says &quot;I logged
+it&quot;, it MUST have already called the matching tool.</li>
+<li><strong>Verb triggers.</strong> Whenever the worker says a verb like <em>&quot;log&quot;,
+&quot;mark&quot;, &quot;send&quot;, &quot;request&quot;</em> — the AI must call the matching tool
+immediately, not just acknowledge.</li>
+<li><strong>No info-collection trap.</strong> The AI never asks more than one
+clarifying question — it commits to an action with reasonable
+defaults instead of stalling.</li>
+</ol>
+<hr />
+<h1>8. The Database</h1>
+<p>VisionLink uses <strong>Supabase</strong> as its single backend service. Supabase is
+PostgreSQL with batteries included — managed hosting, file storage,
+realtime push, authentication, and SDKs for every popular language.</p>
+<h2>8.1 Why Supabase</h2>
+<table>
+<thead>
+<tr>
+<th>Need</th>
+<th>What Supabase provides</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Persistent SQL database</td>
+<td>Managed PostgreSQL 16</td>
+</tr>
+<tr>
+<td>File storage (photos, videos, voice notes, SOS frames)</td>
+<td>S3-compatible buckets with public URL generation</td>
+</tr>
+<tr>
+<td>Live updates from DB to dashboard (no polling)</td>
+<td>Realtime via logical replication → WebSocket</td>
+</tr>
+<tr>
+<td>Two-language clients (Python on Pi, JS in browser)</td>
+<td>Official <code>supabase-py</code> and <code>@supabase/supabase-js</code></td>
+</tr>
+<tr>
+<td>Free tier sufficient for the demo</td>
+<td>500 MB DB, 1 GB storage, 200 MB egress/month</td>
+</tr>
+<tr>
+<td>Easy schema management</td>
+<td>SQL editor in the web dashboard, plus CLI</td>
+</tr>
+</tbody>
+</table>
+<h2>8.2 Tables</h2>
+<table>
+<thead>
+<tr>
+<th>Table</th>
+<th>Rows</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>components</code></td>
+<td>~8 seeded</td>
+<td>Parts catalog. Read by <code>lookup_component</code>.</td>
+</tr>
+<tr>
+<td><code>worker_tasks</code></td>
+<td>growing</td>
+<td>Tasks assigned to a worker. Read by <code>get_my_assignments</code>, written by <code>mark_task_complete</code>.</td>
+</tr>
+<tr>
+<td><code>incidents</code></td>
+<td>growing</td>
+<td>Reported safety / equipment / leak / damage events. Written by <code>log_incident</code>.</td>
+</tr>
+<tr>
+<td><code>part_requests</code></td>
+<td>growing</td>
+<td>Procurement queue. Written by <code>request_part</code>.</td>
+</tr>
+<tr>
+<td><code>managers</code></td>
+<td>~4 seeded</td>
+<td>Recipient list for emails (role → email mapping). Read by <code>send_report</code>.</td>
+</tr>
+<tr>
+<td><code>report_templates</code></td>
+<td>~5 seeded</td>
+<td>HTML email templates with placeholders. Read by <code>send_report</code>.</td>
+</tr>
+<tr>
+<td><code>sent_reports</code></td>
+<td>growing</td>
+<td>Audit log of every email sent (success or failure, provider used). Written by <code>send_report</code>.</td>
+</tr>
+<tr>
+<td><code>sessions</code></td>
+<td>growing</td>
+<td>B1 documentation sessions.</td>
+</tr>
+<tr>
+<td><code>session_assets</code></td>
+<td>growing</td>
+<td>B2 photos + B2 videos + B3 voice notes. References <code>sessions</code>.</td>
+</tr>
+<tr>
+<td><code>sos_events</code></td>
+<td>growing</td>
+<td>B6 SOS panic events, including the live transcript field.</td>
+</tr>
+<tr>
+<td><code>wearable_settings</code></td>
+<td>1 row (singleton)</td>
+<td>Remote config — which AI provider per button, vision mode, SOS tunables, worker identity.</td>
+</tr>
+</tbody>
+</table>
+<h2>8.3 Storage Buckets</h2>
+<table>
+<thead>
+<tr>
+<th>Bucket</th>
+<th>Visibility</th>
+<th>Contents</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>session-assets</code></td>
+<td>Public (URLs go in DB)</td>
+<td>All B2 photos, B2 videos, B3 voice notes, B6 SOS frames</td>
+</tr>
+</tbody>
+</table>
+<h2>8.4 Realtime Channel</h2>
+<p>Every table is added to the <code>supabase_realtime</code> publication. The ops
+dashboard subscribes once per table and receives <code>INSERT</code>, <code>UPDATE</code>,
+<code>DELETE</code> events over WebSocket. New rows appear in the supervisor's UI
+within ~200 ms of being written.</p>
+<h2>8.5 Row-Level Security</h2>
+<p>Disabled for all tables in this demo build. Production deployment
+would re-enable RLS with policies like <em>&quot;a worker can only insert
+rows where worker_id = auth.uid()&quot;</em>. The schema files include the
+<code>alter table ... disable row level security</code> calls for transparency.</p>
+<hr />
+<h1>9. The Two Web Dashboards</h1>
+<p>VisionLink has two separate web surfaces with different audiences.</p>
+<h2>9.1 Voice Command Center (worker simulator)</h2>
+<p><strong>URL:</strong> <code>http://192.168.0.31:8000</code> (the Pi's local IP)
+<strong>Tech:</strong> FastAPI server + vanilla HTML/JS/Tailwind
+<strong>Audience:</strong> Developer or worker testing the wearable</p>
+<p>Looks and behaves like the wearable would, but on screen. Six
+on-screen buttons match the six physical buttons. The same backend
+handlers are called whether a press comes from the screen or the
+GPIO bridge. Live transcripts of the AI conversation stream in the
+right side; recent captures show on the left. Useful for debugging.</p>
+<h2>9.2 Ops Dashboard (supervisor)</h2>
+<p><strong>URL:</strong> <code>http://192.168.0.31:3000</code>
+<strong>Tech:</strong> Next.js 16 + React 19 + Tailwind 4
+<strong>Audience:</strong> Factory supervisor</p>
+<p>Two pages, switchable from the top nav:</p>
+<p><strong>Page 1 — Agent (<code>/</code>):</strong> the existing command center with nine
+realtime panels:</p>
+<ul>
+<li>Incidents · Tasks · Parts · Components</li>
+<li>Managers · Report Templates · Sent Reports</li>
+<li>SOS · Wearable Settings</li>
+</ul>
+<p><strong>Page 2 — Documentation (<code>/documentation</code>):</strong> new page showing what
+the worker has been capturing.</p>
+<ul>
+<li>A stats strip (sessions / open / photos / videos / voice notes /
+orphans)</li>
+<li><em>Sessions</em> panel — list of shifts with start/end time, duration,
+and per-kind asset counts. Click a row to expand and see every
+capture in that session.</li>
+<li><em>Captures</em> panel — tabbed grid (All · Photos · Videos · Voice notes
+· Orphans). Photos open in a modal preview. Videos use <code>&lt;video&gt;</code>
+controls. Voice notes use <code>&lt;audio&gt;</code> controls.</li>
+</ul>
+<p>Every panel updates in real time as the worker captures things —
+within ~200 ms of a button press.</p>
+<hr />
+<h1>10. End-to-End Journey: One SOS Press</h1>
+<p>This section traces the full path of a single B6 double-click, from
+finger to email to live frames on the supervisor's screen — every
+component the signal touches.</p>
+<pre><code>   1. Worker double-clicks B6 (GPIO 13)
+        │
+        ▼
+   2. Linux kernel raises a falling-edge interrupt twice
+      within 50–500 ms (debounce + double-press window)
+        │
+        ▼
+   3. scripts/gpio_bridge.py receives both edges via RPi.GPIO,
+      classifies as a &quot;double&quot;, POSTs /api/button/6/double
+        │  HTTP
+        ▼
+   4. dashboard/server.py routes to b6_sos_trigger handler
+        │
+        ├──► Supabase: INSERT INTO sos_events (...) RETURNING id
+        │
+        ├──► Local state: _state.sos_active_id = &lt;new id&gt;
+        │
+        ├──► Spawn task A: _sos_send_alert_email
+        │       │
+        │       └──► Looks up safety officer in managers table,
+        │            uses send_report tool, Gmail SMTP delivers
+        │
+        ├──► Spawn task B: _sos_auto_close_open_session
+        │       │
+        │       └──► If a B1 session is open, UPDATE sessions SET
+        │            status='closed', ended_at=now()
+        │
+        ├──► Spawn task C: _sos_run_session_openai
+        │       │
+        │       ├──► Open WebSocket to OpenAI Realtime API with
+        │       │    calm-emergency system prompt + voice &quot;Cedar&quot;
+        │       │
+        │       ├──► AudioBridge starts forwarding mic to OpenAI
+        │       │    and playing OpenAI's voice on the speaker
+        │       │
+        │       └──► Every transcript event gets appended to
+        │            sos_events.live_transcript via UPDATE
+        │
+        ├──► Spawn task D: auto-snap loop
+        │       │
+        │       ├──► Every 10 s: picamera2 grabs JPEG
+        │       ├──► Upload to session-assets/sos/&lt;id&gt;/frame_&lt;ts&gt;.jpg
+        │       ├──► OpenAI session.send_image(jpeg)
+        │       └──► UPDATE sos_events SET frames_sent = frames_sent + 1
+        │
+        └──► Spawn task E: resolution watcher
+                │
+                ├──► Every 2 s: SELECT resolved FROM sos_events WHERE id=?
+                ├──► If true → cancel tasks A-D, close OpenAI session
+                └──► Or: asyncio.wait_for() expires after 600 s → auto-resolve
+
+   Meanwhile in the supervisor's browser:
+
+   6. Realtime push delivers each INSERT/UPDATE on sos_events
+        │
+        ▼
+   7. SosPanel re-renders the row:
+        - Border + glow turn red
+        - Live transcript appears character-by-character
+        - Frame thumbnail updates every 10 s with the latest snapshot
+        - Two-tone audible alarm starts (Web Audio API)
+        - Big SHUT OFF button is now visible
+        │
+        ▼
+   8. Supervisor clicks SHUT OFF, types name + reason, confirms
+        │
+        ▼
+   9. Browser sends UPDATE sos_events SET resolved=true, resolved_by=...
+        │
+        ▼
+  10. Wearable's resolution watcher sees the flag flip on its next
+      2-second poll, cancels tasks A-D, closes OpenAI session,
+      stops audio routing, releases the camera lock.
+        │
+        ▼
+  11. Worker hears the AI voice stop. Wearable returns to idle.
+      sos_events row is now resolved=true with full audit trail.
+</code></pre>
+<p>This entire journey takes about 4 seconds from button press to
+supervisor's red alarm. The hard timeout, supervisor shutoff, and
+worker self-cancel all converge on the same teardown path so there's
+exactly one place where state is cleaned up.</p>
+<hr />
+<h1>11. Hosting and Cloud Services</h1>
+<p>VisionLink mixes locally-hosted and cloud-hosted components.</p>
+<h2>11.1 What Runs on the Pi (Local)</h2>
+<table>
+<thead>
+<tr>
+<th>Process</th>
+<th>Port</th>
+<th>Purpose</th>
+<th>Auto-start</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FastAPI dashboard (<code>uvicorn dashboard.server:app</code>)</td>
+<td>8000</td>
+<td>Backend + voice command center + websocket transcript</td>
+<td>systemd unit <code>visionlink.service</code> (planned)</td>
+</tr>
+<tr>
+<td>Next.js dev server (<code>next dev</code>)</td>
+<td>3000</td>
+<td>Ops supervisor dashboard</td>
+<td>Manual (production would use <code>next build</code> + <code>next start</code>)</td>
+</tr>
+<tr>
+<td>GPIO bridge (<code>scripts/gpio_bridge.py</code>)</td>
+<td>—</td>
+<td>Translates physical button presses to HTTP calls</td>
+<td>Manual (planned: another systemd unit)</td>
+</tr>
+<tr>
+<td>audio_worker (sub-process of FastAPI)</td>
+<td>—</td>
+<td>Reads I²S mic, plays I²S speaker, owns the AudioBridge</td>
+<td>Spawned by FastAPI on startup</td>
+</tr>
+</tbody>
+</table>
+<p>The Pi is on the same Wi-Fi as the supervisor's laptop. No NAT or
+port forwarding is needed for the demo.</p>
+<h2>11.2 What Runs in the Cloud (External)</h2>
+<table>
+<thead>
+<tr>
+<th>Service</th>
+<th>Provider</th>
+<th>Purpose</th>
+<th>Auth</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Supabase project</td>
+<td>Supabase (managed)</td>
+<td>PostgreSQL DB, file storage, realtime channel</td>
+<td>Two API keys: <code>SUPABASE_URL</code> (public) + <code>SUPABASE_SERVICE_KEY</code> (server-only) + <code>SUPABASE_ANON_KEY</code> (browser)</td>
+</tr>
+<tr>
+<td>Gemini Live API</td>
+<td>Google AI Studio</td>
+<td>Voice + vision AI sessions</td>
+<td><code>GEMINI_API_KEY</code></td>
+</tr>
+<tr>
+<td>OpenAI Realtime API</td>
+<td>OpenAI</td>
+<td>Voice + vision AI sessions, SOS persona</td>
+<td><code>OPENAI_API_KEY</code></td>
+</tr>
+<tr>
+<td>Anthropic API (planned)</td>
+<td>Anthropic</td>
+<td>Claude email drafting</td>
+<td><code>ANTHROPIC_API_KEY</code></td>
+</tr>
+<tr>
+<td>Gmail SMTP</td>
+<td>Google</td>
+<td>Email delivery</td>
+<td><code>SMTP_EMAIL</code> + <code>SMTP_APP_PASSWORD</code></td>
+</tr>
+<tr>
+<td>Resend (alternative)</td>
+<td>Resend</td>
+<td>Email delivery (developer-friendly alternative)</td>
+<td><code>RESEND_API_KEY</code></td>
+</tr>
+<tr>
+<td>Soniox (planned alternative)</td>
+<td>Soniox</td>
+<td>Standalone STT</td>
+<td><code>SONIOX_API_KEY</code></td>
+</tr>
+</tbody>
+</table>
+<p>All API keys are stored in a single <code>.env</code> file at the project root.
+The file is in <code>.gitignore</code> and never committed. A <code>.env.example</code>
+template ships with the project.</p>
+<hr />
+<h1>12. Security and Privacy Notes</h1>
+<table>
+<thead>
+<tr>
+<th>Topic</th>
+<th>Current state</th>
+<th>Production-readiness</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>API keys</td>
+<td>In a local <code>.env</code> file, gitignored</td>
+<td>Demo-ready. Production would use a secrets manager.</td>
+</tr>
+<tr>
+<td>Supabase Row-Level Security</td>
+<td>Disabled for the demo</td>
+<td>Production must enable RLS with auth-based policies</td>
+</tr>
+<tr>
+<td>Storage bucket</td>
+<td><code>session-assets</code> is public</td>
+<td>Production should use signed URLs</td>
+</tr>
+<tr>
+<td>Email delivery</td>
+<td>Gmail SMTP via app password</td>
+<td>Demo-ready. App password is per-account, revocable.</td>
+</tr>
+<tr>
+<td>Worker identity</td>
+<td>Hardcoded to a single demo worker</td>
+<td>Production: Supabase Auth login per worker</td>
+</tr>
+<tr>
+<td>Local dashboard auth</td>
+<td>None — anyone on the Wi-Fi can hit :3000 and :8000</td>
+<td>Production: VPN, basic auth, or Supabase Auth gating</td>
+</tr>
+<tr>
+<td>Audio recording disclosure</td>
+<td>Voice notes stored as WAV files</td>
+<td>Production: clear worker consent + retention policy</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h1>13. Common Project Review Questions</h1>
+<p><strong>Q. What database does VisionLink use?</strong></p>
+<p>PostgreSQL, hosted via Supabase. PostgreSQL 16 with the
+<code>supabase_realtime</code> extension for live websocket push.</p>
+<p><strong>Q. How does the wearable talk to the AI?</strong></p>
+<p>Bidirectional WebSocket. The Pi opens a connection to either
+Google's Gemini Live API or OpenAI's Realtime API. Microphone audio
+is streamed up; the AI's voice and tool calls stream down. Tool
+calls are intercepted on the Pi side, executed against Supabase or
+Gmail, and the result is sent back into the same WebSocket.</p>
+<p><strong>Q. Why two AI providers?</strong></p>
+<p>Each has different strengths. Gemini is the cheaper, faster,
+multimodal-native default. OpenAI Realtime is used for the SOS
+persona because its instruction-following is more reliable for
+tightly-scripted scenarios. The supervisor can switch the default
+provider for B4 and B5 from the Wearable Settings panel without
+restarting anything.</p>
+<p><strong>Q. What language is the backend?</strong></p>
+<p>Python 3.13. The FastAPI framework handles HTTP and WebSocket
+endpoints. AsyncIO drives concurrent tasks like the SOS panic loop.</p>
+<p><strong>Q. What language is the supervisor dashboard?</strong></p>
+<p>TypeScript on top of Next.js 16 (App Router) with React 19 and
+Tailwind CSS 4. Live updates come from Supabase Realtime over
+WebSocket.</p>
+<p><strong>Q. How do photos and videos get to the supervisor?</strong></p>
+<p>The Pi uploads them directly to Supabase Storage (an S3-compatible
+bucket). A row in <code>session_assets</code> points to the storage path. The
+supervisor's browser subscribes to the <code>session_assets</code> table over
+realtime; new rows trigger a UI update; the browser fetches the
+public URL of the file and displays it inline.</p>
+<p><strong>Q. What happens if the network is down?</strong></p>
+<p>The wearable degrades gracefully:</p>
+<ul>
+<li>Button presses still register locally.</li>
+<li>B1 session opens fail (Supabase insert errors) and the worker
+hears an error tone.</li>
+<li>B2 captures buffer locally for retry, but the current
+implementation does not yet persist them across power cycles —
+this is an acknowledged improvement target.</li>
+<li>B4/B5/B6 AI sessions fail to connect; the worker hears a tone.</li>
+<li>The supervisor dashboard shows a stale view until reconnection.</li>
+</ul>
+<p><strong>Q. How is the SOS panic mode different from a normal AI session?</strong></p>
+<p>Five things:</p>
+<ol>
+<li><strong>Always uses OpenAI</strong> regardless of B4/B5 settings.</li>
+<li><strong>Different system prompt</strong> — calm-emergency persona, no tool
+calls allowed.</li>
+<li><strong>Inserts a database row</strong> at trigger time so the supervisor's
+dashboard can light up.</li>
+<li><strong>Auto-snaps a fresh camera frame every N seconds</strong> and uploads
+each to storage so the supervisor sees what's happening.</li>
+<li><strong>Has a remote shutoff</strong> — the supervisor flips <code>resolved=true</code> in
+the database; the wearable polls every 2 s and tears everything
+down.</li>
+</ol>
+<p><strong>Q. What's the GPIO bridge?</strong></p>
+<p>A 100-line Python sidecar (<code>scripts/gpio_bridge.py</code>) that listens for
+falling edges on the six button pins and translates each gesture
+(single, double, hold) into the same HTTP call the on-screen
+simulator makes. It runs as a separate process from the dashboard so
+that a software change in one cannot break the other. The bridge
+uses RPi.GPIO with a 50 ms debounce and a 500 ms double-press window.</p>
+<p><strong>Q. How are double-clicks detected?</strong></p>
+<p>Two falling edges within 500 ms of each other on the same pin. The
+first edge starts a timer; if a second edge arrives before the timer
+expires, a <em>double</em> event fires; otherwise the timer fires a <em>single</em>
+event. Hardware-level bouncing is rejected by RPi.GPIO's <code>bouncetime</code>
+parameter (50 ms).</p>
+<p><strong>Q. What's <code>audio_worker</code>?</strong></p>
+<p>A subprocess of the FastAPI server that owns the I²S audio device
+exclusively. It feeds the microphone bytes into a shared in-process
+queue (the <code>AudioBridge</code>) which both AI sessions and B3 voice notes
+read from, and it consumes a queue of speaker bytes from anyone
+that wants to play sound. Centralizing audio access this way avoids
+the <em>device busy</em> error you'd get from two processes opening ALSA
+simultaneously.</p>
+<p><strong>Q. What's the I²S bus?</strong></p>
+<p>A digital audio standard. Three wires per direction: a bit clock
+(BCLK), a word-select clock (LRCLK), and a data line. The microphone
+and amplifier share the two clock lines and have separate data
+lines, so the whole audio path is just four wires plus power and
+ground. I²S avoids the noise and latency of analog audio on the Pi.</p>
+<p><strong>Q. How much does this cost to run?</strong></p>
+<p>Per a single demo session of ~10 minutes of voice + vision:</p>
+<ul>
+<li>Gemini: ~€0.15</li>
+<li>OpenAI: ~€0.40</li>
+<li>Supabase + storage + email: free tier, no charge</li>
+</ul>
+<p>A full SOS event (10-minute hard cap, ~60 frames, full audio
+session) costs about €0.30 on OpenAI worst case.</p>
+<p><strong>Q. Is the source code on GitHub?</strong></p>
+<p>Yes — the project is at
+<code>https://github.com/alaamjaish/visionlink</code> on the <code>openai-sdk</code>
+branch. The repository has a comprehensive <code>CLAUDE.md</code> master
+context file at the root and per-session logs under
+<code>Documentation/sessions/</code>.</p>
+<hr />
+<h1>14. Glossary</h1>
+<table>
+<thead>
+<tr>
+<th>Term</th>
+<th>What it means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>BCM</strong></td>
+<td>Broadcom GPIO numbering (vs physical pin numbering). VisionLink's pin map uses BCM.</td>
+</tr>
+<tr>
+<td><strong>GPIO</strong></td>
+<td>General-Purpose Input/Output. The Pi's programmable pins.</td>
+</tr>
+<tr>
+<td><strong>Falling edge</strong></td>
+<td>A signal transition from high (3.3 V) to low (0 V). VisionLink's button presses are detected as falling edges.</td>
+</tr>
+<tr>
+<td><strong>Pull-up resistor</strong></td>
+<td>An internal resistor that holds an input pin at 3.3 V when nothing is connected. The Pi has these built into every GPIO.</td>
+</tr>
+<tr>
+<td><strong>I²S</strong></td>
+<td>Inter-IC Sound — a digital audio bus standard.</td>
+</tr>
+<tr>
+<td><strong>CSI</strong></td>
+<td>Camera Serial Interface — the ribbon cable port on the Pi that connects to the Pi Camera.</td>
+</tr>
+<tr>
+<td><strong>WebSocket</strong></td>
+<td>A persistent two-way connection between browser and server. Used for live transcripts and AI streaming.</td>
+</tr>
+<tr>
+<td><strong>Realtime</strong></td>
+<td>Supabase's WebSocket-based push of database changes. The dashboard receives <code>INSERT</code>/<code>UPDATE</code>/<code>DELETE</code> events as they happen.</td>
+</tr>
+<tr>
+<td><strong>Tool call</strong></td>
+<td>When the AI invokes a function (like <code>lookup_component</code>) that runs server-side and returns a result the AI can speak.</td>
+</tr>
+<tr>
+<td><strong>VAD</strong></td>
+<td>Voice Activity Detection — the model's heuristic for deciding when the worker has finished speaking.</td>
+</tr>
+<tr>
+<td><strong>TTS</strong></td>
+<td>Text-to-Speech.</td>
+</tr>
+<tr>
+<td><strong>STT</strong></td>
+<td>Speech-to-Text.</td>
+</tr>
+<tr>
+<td><strong>RLS</strong></td>
+<td>Row-Level Security — a PostgreSQL feature for per-row permissions. Disabled in this demo.</td>
+</tr>
+<tr>
+<td><strong>systemd</strong></td>
+<td>The Linux service manager. VisionLink's auto-start unit lives at <code>visionlink.service</code>.</td>
+</tr>
+<tr>
+<td><strong>Supabase storage bucket</strong></td>
+<td>An S3-compatible cloud file store. VisionLink uses one bucket: <code>session-assets</code>.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<p><em>End of master reference.</em></p>
+
+</body>
+</html>
