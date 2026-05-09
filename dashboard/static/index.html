@@ -858,15 +858,16 @@
             break;
           case 'live_state':
             setLive(data.connected, data.mode || currentMode);
-            // Mark B4 + B5 as armed-and-ready-to-stop while AI session lives —
-            // BUT only when SOS is NOT the one running it. SOS uses the same
-            // session machinery, so without this gate B6 SOS would also light
-            // up B4 and B5 (which would be misleading).
-            if (!sosArmed) {
-              setSimButtonState(4, 'ai-live', !!data.connected);
-              setSimButtonState(5, 'ai-live', !!data.connected);
+            // Mark whichever button started the session as armed-and-ready-
+            // to-stop. Server tags live_state with `start_button` (4 = audio
+            // agent, 5 = vision agent). Highlighting BOTH was misleading and
+            // got reported as a UI bug. SOS uses the same session machinery,
+            // so we still gate on sosArmed to keep B4/B5 clean during SOS.
+            if (!sosArmed && data.connected) {
+              const owner = (data.start_button === 5) ? 5 : 4;
+              setSimButtonState(4, 'ai-live', owner === 4);
+              setSimButtonState(5, 'ai-live', owner === 5);
             } else {
-              // Make sure B4/B5 stay clean while SOS owns the session
               setSimButtonState(4, 'ai-live', false);
               setSimButtonState(5, 'ai-live', false);
             }

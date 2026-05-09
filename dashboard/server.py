@@ -362,6 +362,12 @@ class SessionCamera:
             except Exception:
                 pass
             self._cam = None
+            # Picamera2 has internal C-level libcamera resources that don't
+            # always release on close() if construction half-failed earlier
+            # in the session. Force a GC pass so the underlying camera
+            # handle is freed before the next open().
+            import gc
+            gc.collect()
 
     def grab_jpeg(self) -> bytes:
         if self._cam is None:
@@ -375,12 +381,17 @@ class SessionCamera:
 async def run_live_session(
     mode: str = "audio",
     system_prompt_override: Optional[str] = None,
+    start_button: int = 4,
 ) -> None:
     """Run the Gemini Live session.
 
     `system_prompt_override` lets callers (specifically the SOS controller)
     inject a temporary persona without touching agent_settings.json. When
     None, falls back to agent_settings['system_prompt'] as usual.
+
+    `start_button` is 4 (audio agent) or 5 (vision agent) — broadcast in
+    live_state so the simulator only highlights the button that owns this
+    session, not both.
     """
     if not API_KEY:
         await log("GEMINI_API_KEY missing in .env — cannot start", "error")
@@ -479,7 +490,13 @@ async def run_live_session(
         async with client.aio.live.connect(model=MODEL, config=config) as session:
             current_session = session
             state["live_connected"] = True
-            await broadcast({"type": "live_state", "connected": True, "mode": live_mode})
+            await broadcast({
+                "type": "live_state",
+                "connected": True,
+                "mode": live_mode,
+                "provider": "gemini",
+                "start_button": start_button,
+            })
             await log(f"Connected to Gemini Live ({live_mode}) — speak now")
 
             loop = asyncio.get_running_loop()
@@ -674,9 +691,12 @@ async def run_live_session(
                 tasks.append(video_stream())
             await asyncio.gather(*tasks)
     except asyncio.CancelledError:
-        await log("Live session cancelled")
+        await log("Gemini Live session cancelled")
     except Exception as exc:
-        await log(f"Live session error: {exc}", "error")
+        # Tag the provider so quota / 1011 errors are obviously Gemini-side
+        # (the user can't tell from a generic message whether their Gemini
+        # or OpenAI quota was hit).
+        await log(f"Gemini Live session error: {exc}", "error")
         traceback.print_exc()
     finally:
         current_session = None
@@ -690,8 +710,13 @@ async def run_live_session(
                 pass
         state["live_connected"] = False
         state["mode"] = "audio"
-        await broadcast({"type": "live_state", "connected": False})
-        await log("Live session closed")
+        await broadcast({
+            "type": "live_state",
+            "connected": False,
+            "provider": "gemini",
+            "start_button": start_button,
+        })
+        await log("Gemini Live session closed")
 
 
 @app.post("/api/live/start")
@@ -964,9 +989,16 @@ async def health() -> JSONResponse:
 # OpenAI Realtime — parallel provider, shares tools/DB/audio
 # ============================================================
 
-async def _run_oai_session_task(start_camera: bool) -> None:
+async def _run_oai_session_task(
+    start_camera: bool,
+    start_button: int = 4,
+) -> None:
     """Wrapper that holds a reference to the OpenAISession so other
-    endpoints (snap, stop) can talk to it while it runs."""
+    endpoints (snap, stop) can talk to it while it runs.
+
+    `start_button` (4 = audio agent, 5 = vision agent) lets the simulator
+    highlight only the button that owns this session.
+    """
     global oai_session, oai_camera, last_frame_jpeg
 
     if not OPENAI_API_KEY:
@@ -981,6 +1013,7 @@ async def _run_oai_session_task(start_camera: bool) -> None:
         broadcast=broadcast,
         log=log,
         dlog=dlog,
+        start_button=start_button,
     )
     oai_session = sess
 
@@ -1202,22 +1235,39 @@ async def oai_settings_set(payload: dict) -> JSONResponse:
 
 def _grab_jpeg_for_buttons() -> bytes:
     """Capture a JPEG using the open SessionCamera if available, else
-    take a transient picamera2 lock. Sync — call via to_thread."""
+    take a transient picamera2 lock. Sync — call via to_thread.
+
+    Wrapped in try/finally + gc.collect() because Picamera2 leaks the
+    underlying camera handle on failed init paths (observed during a
+    busy-camera retry storm: each failed Picamera2() attempt leaves a
+    half-initialized object holding /dev/video0 until GC runs).
+    """
     import io as _io
     if current_camera is not None:
         return current_camera.grab_jpeg()
     if oai_camera is not None:
         return oai_camera.grab_jpeg()
     from picamera2 import Picamera2
-    cam = Picamera2()
-    cfg = cam.create_still_configuration(main={"size": (1024, 576)})
-    cam.configure(cfg)
-    cam.start()
-    time.sleep(0.4)
-    buf = _io.BytesIO()
-    cam.capture_file(buf, format="jpeg")
-    cam.close()
-    return buf.getvalue()
+    cam = None
+    try:
+        cam = Picamera2()
+        cfg = cam.create_still_configuration(main={"size": (1024, 576)})
+        cam.configure(cfg)
+        cam.start()
+        time.sleep(0.4)
+        buf = _io.BytesIO()
+        cam.capture_file(buf, format="jpeg")
+        return buf.getvalue()
+    finally:
+        if cam is not None:
+            try:
+                cam.close()
+            except Exception:
+                pass
+        # Force GC to release leaked refs (especially after exceptions
+        # during Picamera2 init like "Failed to acquire camera").
+        import gc
+        gc.collect()
 
 
 async def _button_ai_starter(
@@ -1238,10 +1288,17 @@ async def _button_ai_starter(
     if (live_task and not live_task.done()) or (oai_task and not oai_task.done()):
         return {"error": "session already running — double-click to STOP first"}
 
+    # Tag the session with which button started it. Used by live_state to
+    # tell the simulator to highlight ONLY that button (otherwise B4 and B5
+    # both go yellow whenever a session lives, which is misleading).
+    start_button = 5 if camera else 4
+
     if provider == "openai":
         if not OPENAI_API_KEY:
             return {"error": "OPENAI_API_KEY missing"}
-        oai_task = asyncio.create_task(_run_oai_session_task(camera))
+        oai_task = asyncio.create_task(
+            _run_oai_session_task(camera, start_button=start_button)
+        )
         return {"started": "openai", "camera": camera}
     elif provider == "gemini":
         if not API_KEY:
@@ -1250,6 +1307,7 @@ async def _button_ai_starter(
         live_task = asyncio.create_task(run_live_session(
             mode=gemini_mode,
             system_prompt_override=system_prompt_override,
+            start_button=start_button,
         ))
         return {"started": "gemini", "mode": gemini_mode}
     return {"error": f"unknown provider {provider!r}"}

@@ -77,7 +77,13 @@ BUTTON_DEBOUNCE_MS = 200    # Software debounce (RPi.GPIO bouncetime). Tactile
                             # double-click (B2 single-press → video instead of
                             # photo). 200 ms keeps real double-clicks usable
                             # (DOUBLE_PRESS_WINDOW is 500 ms).
-DOUBLE_PRESS_WINDOW = 0.5  # seconds
+DOUBLE_PRESS_WINDOW = 0.7  # seconds. Was 0.5 — combined with 200 ms
+                            # bouncetime that left only a 300 ms window for
+                            # the second click of a real double. User's B5
+                            # double-clicks weren't registering (only B4
+                            # doubles were). 0.7 s gives a 500 ms effective
+                            # window without making single-click feel too
+                            # delayed.
 
 # === AI ===
 GEMINI_MODEL = "gemini-2.5-flash"

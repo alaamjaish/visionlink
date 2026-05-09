@@ -318,6 +318,13 @@ async def b3_voice_note_start(
         )
         return {"error": "AI session active — cannot record voice note"}
 
+    # Capture press time IMMEDIATELY. drain_mic + log can take a few hundred
+    # ms (drain is patient — see audio_bridge.drain_mic for why), and we want
+    # duration_s to reflect when the user actually pressed the button, not
+    # when our internal setup finished. Otherwise a 10-second recording can
+    # report as 3 seconds, while the file still contains the full audio.
+    press_time = time.time()
+
     # Drain any stale mic blocks the worker has been buffering since the last
     # consumer (AI session or prior voice note) ended. AudioBridge mic_q is
     # capped at 2000 blocks × 100 ms = 200 s (~3 min 20 s) — without this
@@ -341,7 +348,7 @@ async def b3_voice_note_start(
             return {"already_recording": True}
         _state.voice_note_recording = True
         _state.voice_note_buffer = bytearray()
-        _state.voice_note_started_at = time.time()
+        _state.voice_note_started_at = press_time
 
     await log("🎙 voice note recording... (press B3 again to stop)", "info")
 

@@ -176,6 +176,7 @@ class OpenAISession:
         broadcast: Callable[[dict[str, Any]], Awaitable[None]],
         log: Callable[[str, str], Awaitable[None]],
         dlog: Callable[..., None],
+        start_button: int = 4,
     ) -> None:
         self.api_key = api_key
         self.bridge = bridge
@@ -183,6 +184,10 @@ class OpenAISession:
         self.broadcast = broadcast
         self.log = log
         self.dlog = dlog
+        # 4 = audio agent (B4), 5 = vision agent (B5). Echoed back in the
+        # live_state events so the simulator highlights only the originating
+        # button.
+        self.start_button = start_button
 
         # Set during run()
         self.connection: Any = None
@@ -334,6 +339,7 @@ class OpenAISession:
                     "connected": True,
                     "mode": "openai",
                     "provider": "openai",
+                    "start_button": self.start_button,
                 })
                 await self.log("Connected to OpenAI Realtime — speak now", "info")
 
@@ -358,7 +364,12 @@ class OpenAISession:
             traceback.print_exc()
         finally:
             self.connection = None
-            await self.broadcast({"type": "live_state", "connected": False})
+            await self.broadcast({
+                "type": "live_state",
+                "connected": False,
+                "provider": "openai",
+                "start_button": self.start_button,
+            })
             await self.log("OpenAI session closed", "info")
 
     # ------------------------------------------------------------------

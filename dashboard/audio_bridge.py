@@ -132,16 +132,36 @@ class AudioBridge:
     # ------------------------------------------------------------------ mic
 
     def drain_mic(self) -> int:
-        """Discard any mic frames sitting in the queue (call at session start)."""
+        """Discard ALL mic frames currently buffered. Patient enough to handle
+        mp.Queue's lazy feeder thread.
+
+        mp.Queue uses a producer-side feeder thread that asynchronously pushes
+        items from a buffer into the underlying pipe. A naive "while not empty"
+        drain stops as soon as get_nowait raises Empty — even if the feeder is
+        about to push 100+ more items through. We saw this break voice notes:
+        a 5-second press produced a 1m43s file because drain_mic returned
+        after dropping 16 blocks, leaving ~93 s of stale audio that the
+        capture loop then burst-read at the start of recording.
+
+        Drains for up to 500 ms total. Stops early after 100 ms of continuous
+        emptiness (the queue is genuinely drained at that point).
+        """
         dropped = 0
         if self._mic_q is None:
             return 0
-        while True:
+        deadline = time.monotonic() + 0.5
+        last_get_at = time.monotonic()
+        while time.monotonic() < deadline:
             try:
                 self._mic_q.get_nowait()
                 dropped += 1
+                last_get_at = time.monotonic()
             except Exception:
-                break
+                # Empty *right now* — but the feeder may be about to push more.
+                # Give it 100 ms of continuous emptiness before declaring done.
+                if time.monotonic() - last_get_at > 0.1:
+                    break
+                time.sleep(0.02)
         return dropped
 
     async def read_mic_block(self) -> bytes:
