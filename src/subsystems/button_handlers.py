@@ -223,6 +223,7 @@ async def b2_record_video(
     log: Callable[[str, str], Awaitable[None]],
     broadcast: Callable[[dict[str, Any]], Awaitable[None]],
     duration_s: float = 5.0,
+    camera_lock: Any = None,
 ) -> dict[str, Any]:
     """Record a short MP4 via rpicam-vid, then upload. Synchronous-ish —
     the simulator click waits ~duration_s.
@@ -260,12 +261,21 @@ async def b2_record_video(
             "-n",   # no preview window
         ]
         await log(f"🎥 recording {duration_s}s video (no audio)...", "info")
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        _, err = await proc.communicate()
+        if camera_lock is None:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            _, err = await proc.communicate()
+        else:
+            with camera_lock:
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                _, err = await proc.communicate()
         if proc.returncode != 0:
             msg = err.decode(errors='replace')[:300] or "(no stderr)"
             await log(f"video capture failed: {msg}", "error")

@@ -20,6 +20,7 @@ import asyncio
 import json
 import os
 import sys
+import threading
 import time
 import traceback
 from pathlib import Path
@@ -249,6 +250,7 @@ last_frame_jpeg: Optional[bytes] = None
 oai_task: Optional[asyncio.Task] = None
 oai_session: Optional[OpenAISession] = None
 oai_camera: Optional["SessionCamera"] = None  # forward type ref
+_camera_lock = threading.RLock()
 
 # Audio I/O lives in a subprocess so an ALSA `plug` device assertion
 # (the C-level pcm_plugin.c crash) only kills the child, not the FastAPI
@@ -348,34 +350,62 @@ class SessionCamera:
 
     def open(self) -> None:
         from picamera2 import Picamera2
-        cam = Picamera2()
-        cfg = cam.create_still_configuration(main={"size": (1024, 576)})
-        cam.configure(cfg)
-        cam.start()
-        time.sleep(0.4)  # exposure settle
-        self._cam = cam
+        import gc
+
+        with _camera_lock:
+            self.close()
+            cam = None
+            try:
+                cam = Picamera2()
+                # Store immediately so close() can clean up if configure/start
+                # raises after Picamera2 has acquired libcamera resources.
+                self._cam = cam
+                cfg = cam.create_still_configuration(main={"size": (1024, 576)})
+                cam.configure(cfg)
+                cam.start()
+                time.sleep(0.4)  # exposure settle
+            except Exception:
+                if cam is not None:
+                    try:
+                        cam.stop()
+                    except Exception:
+                        pass
+                    try:
+                        cam.close()
+                    except Exception:
+                        pass
+                self._cam = None
+                gc.collect()
+                raise
 
     def close(self) -> None:
-        if self._cam is not None:
-            try:
-                self._cam.close()
-            except Exception:
-                pass
-            self._cam = None
-            # Picamera2 has internal C-level libcamera resources that don't
-            # always release on close() if construction half-failed earlier
-            # in the session. Force a GC pass so the underlying camera
-            # handle is freed before the next open().
-            import gc
-            gc.collect()
+        with _camera_lock:
+            if self._cam is not None:
+                cam = self._cam
+                self._cam = None
+                try:
+                    cam.stop()
+                except Exception:
+                    pass
+                try:
+                    cam.close()
+                except Exception:
+                    pass
+                # Picamera2 has internal C-level libcamera resources that don't
+                # always release on close() if construction half-failed earlier
+                # in the session. Force a GC pass so the underlying camera
+                # handle is freed before the next open().
+                import gc
+                gc.collect()
 
     def grab_jpeg(self) -> bytes:
         if self._cam is None:
             raise RuntimeError("camera not open")
         import io
-        buf = io.BytesIO()
-        self._cam.capture_file(buf, format="jpeg")
-        return buf.getvalue()
+        with _camera_lock:
+            buf = io.BytesIO()
+            self._cam.capture_file(buf, format="jpeg")
+            return buf.getvalue()
 
 
 async def run_live_session(
@@ -788,25 +818,40 @@ async def photo() -> JSONResponse:
     loop = asyncio.get_running_loop()
 
     def _capture_transient() -> str:
-        cam = Picamera2()
-        cfg = cam.create_still_configuration(main={"size": (1280, 720)})
-        cam.configure(cfg)
-        cam.start()
-        time.sleep(0.6)  # let exposure settle
-        fname = f"photo_{int(time.time())}.jpg"
-        cam.capture_file(str(CAPTURES_DIR / fname))
-        cam.close()
-        return fname
+        import gc
+        with _camera_lock:
+            cam = None
+            try:
+                cam = Picamera2()
+                cfg = cam.create_still_configuration(main={"size": (1280, 720)})
+                cam.configure(cfg)
+                cam.start()
+                time.sleep(0.6)  # let exposure settle
+                fname = f"photo_{int(time.time())}.jpg"
+                cam.capture_file(str(CAPTURES_DIR / fname))
+                return fname
+            finally:
+                if cam is not None:
+                    try:
+                        cam.stop()
+                    except Exception:
+                        pass
+                    try:
+                        cam.close()
+                    except Exception:
+                        pass
+                gc.collect()
 
-    def _capture_session() -> str:
+    def _capture_session(session_cam: SessionCamera) -> str:
         # Re-use the session camera (open in snap/video mode)
         fname = f"photo_{int(time.time())}.jpg"
-        current_camera._cam.capture_file(str(CAPTURES_DIR / fname))  # type: ignore[attr-defined]
+        (CAPTURES_DIR / fname).write_bytes(session_cam.grab_jpeg())
         return fname
 
     try:
-        if current_camera is not None:
-            filename = await loop.run_in_executor(None, _capture_session)
+        session_cam = current_camera or oai_camera
+        if session_cam is not None:
+            filename = await loop.run_in_executor(None, _capture_session, session_cam)
         else:
             filename = await loop.run_in_executor(None, _capture_transient)
         state["latest_photo"] = f"/static/captures/{filename}"
@@ -1015,10 +1060,11 @@ async def _run_oai_session_task(
         dlog=dlog,
         start_button=start_button,
     )
-    oai_session = sess
 
     # Open the session camera if requested (so SNAP & ASK works without
-    # blocking on a transient picamera2 init)
+    # blocking on a transient picamera2 init). Do this before publishing
+    # oai_session so B5 auto-snap cannot race a concurrent transient camera
+    # open against this long-running SessionCamera.open().
     cam: Optional[SessionCamera] = None
     if start_camera:
         try:
@@ -1031,6 +1077,7 @@ async def _run_oai_session_task(
             cam = None
             oai_camera = None
 
+    oai_session = sess
     state["mode"] = "openai"
     state["live_connected"] = True
     try:
@@ -1104,17 +1151,31 @@ async def oai_snap(prompt: Optional[str] = None) -> JSONResponse:
             # Transient picamera2 capture — slower (~1 s) but works without
             # ?camera=true on session start.
             from picamera2 import Picamera2
+            import gc
             import io
             def _transient() -> bytes:
-                cam = Picamera2()
-                cfg = cam.create_still_configuration(main={"size": (1024, 576)})
-                cam.configure(cfg)
-                cam.start()
-                time.sleep(0.4)
-                buf = io.BytesIO()
-                cam.capture_file(buf, format="jpeg")
-                cam.close()
-                return buf.getvalue()
+                with _camera_lock:
+                    cam = None
+                    try:
+                        cam = Picamera2()
+                        cfg = cam.create_still_configuration(main={"size": (1024, 576)})
+                        cam.configure(cfg)
+                        cam.start()
+                        time.sleep(0.4)
+                        buf = io.BytesIO()
+                        cam.capture_file(buf, format="jpeg")
+                        return buf.getvalue()
+                    finally:
+                        if cam is not None:
+                            try:
+                                cam.stop()
+                            except Exception:
+                                pass
+                            try:
+                                cam.close()
+                            except Exception:
+                                pass
+                        gc.collect()
             jpeg = await asyncio.to_thread(_transient)
 
         await sess.send_image(jpeg, prompt=prompt)
@@ -1248,26 +1309,31 @@ def _grab_jpeg_for_buttons() -> bytes:
     if oai_camera is not None:
         return oai_camera.grab_jpeg()
     from picamera2 import Picamera2
-    cam = None
-    try:
-        cam = Picamera2()
-        cfg = cam.create_still_configuration(main={"size": (1024, 576)})
-        cam.configure(cfg)
-        cam.start()
-        time.sleep(0.4)
-        buf = _io.BytesIO()
-        cam.capture_file(buf, format="jpeg")
-        return buf.getvalue()
-    finally:
-        if cam is not None:
-            try:
-                cam.close()
-            except Exception:
-                pass
-        # Force GC to release leaked refs (especially after exceptions
-        # during Picamera2 init like "Failed to acquire camera").
-        import gc
-        gc.collect()
+    import gc
+    with _camera_lock:
+        cam = None
+        try:
+            cam = Picamera2()
+            cfg = cam.create_still_configuration(main={"size": (1024, 576)})
+            cam.configure(cfg)
+            cam.start()
+            time.sleep(0.4)
+            buf = _io.BytesIO()
+            cam.capture_file(buf, format="jpeg")
+            return buf.getvalue()
+        finally:
+            if cam is not None:
+                try:
+                    cam.stop()
+                except Exception:
+                    pass
+                try:
+                    cam.close()
+                except Exception:
+                    pass
+            # Force GC to release leaked refs (especially after exceptions
+            # during Picamera2 init like "Failed to acquire camera").
+            gc.collect()
 
 
 async def _button_ai_starter(
@@ -1334,7 +1400,11 @@ async def _b5_auto_snap_when_ready() -> None:
     feel like 'show me what I'm pointing at' instead of 'open camera and
     do nothing'."""
     for _ in range(60):  # ~6 s @ 100ms
-        if current_session is not None or oai_session is not None:
+        oai_ready = (
+            oai_session is not None
+            and getattr(oai_session, "connection", None) is not None
+        )
+        if current_session is not None or oai_ready:
             # Let the session settle a beat before injecting (otherwise the
             # frame races the very first user audio block)
             await asyncio.sleep(0.6)
@@ -1410,7 +1480,9 @@ async def button_dispatch(n: int, event: str) -> JSONResponse:
             grab_jpeg=lambda: _grab_jpeg_for_buttons(),
         ))
     elif (n, event) == (2, "double"):
-        result = await _run(lambda: bh.b2_record_video(log, broadcast))
+        result = await _run(lambda: bh.b2_record_video(
+            log, broadcast, camera_lock=_camera_lock,
+        ))
     elif (n, event) == (3, "single"):
         # Press-to-toggle voice note — first press starts, second stops.
         # The physical bridge sends this for B3 (the simulator may still

@@ -70,20 +70,15 @@ BTN_AI_AGENT = 13      # Button 6: Agent commands
 ALL_BUTTONS = [BTN_SESSION, BTN_PHOTO_VIDEO, BTN_VOICE_NOTE,
                BTN_AI_CAMERA, BTN_AI_VOICE, BTN_AI_AGENT]
 
-BUTTON_DEBOUNCE_MS = 200    # Software debounce (RPi.GPIO bouncetime). Tactile
-                            # buttons on this board bounce 50–200 ms; with the
-                            # old 50 ms a single press registered 2 falling
-                            # edges, which the gesture detector then read as a
-                            # double-click (B2 single-press → video instead of
-                            # photo). 200 ms keeps real double-clicks usable
-                            # (DOUBLE_PRESS_WINDOW is 500 ms).
-DOUBLE_PRESS_WINDOW = 0.7  # seconds. Was 0.5 — combined with 200 ms
-                            # bouncetime that left only a 300 ms window for
-                            # the second click of a real double. User's B5
-                            # double-clicks weren't registering (only B4
-                            # doubles were). 0.7 s gives a 500 ms effective
-                            # window without making single-click feel too
-                            # delayed.
+BUTTON_DEBOUNCE_MS = 30     # Raw RPi.GPIO edge guard only. Real click
+                            # validation lives in ButtonHandler: a falling
+                            # edge must stay LOW, then release HIGH, before
+                            # another edge can count as a second click. This
+                            # keeps fast physical doubles usable without
+                            # letting contact bounce become B2 video/SOS.
+BUTTON_PRESS_STABLE_MS = 20
+BUTTON_RELEASE_STABLE_MS = 40
+DOUBLE_PRESS_WINDOW = 0.7   # seconds after a validated first click.
 
 # === AI ===
 GEMINI_MODEL = "gemini-2.5-flash"
