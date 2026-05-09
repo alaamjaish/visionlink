@@ -8,7 +8,7 @@ goes here, not in the GPIO or dashboard layers.
 Button map (matches 7TH_MAY_UPDATE.md, with B5/B6 updated 2026-05-08):
   B1 single  → toggle documentation session (start or close)
   B2 single  → take photo (added to open session if any)
-  B2 double  → record a short video clip (~5s)
+  B2 double  → toggle video+audio recording (start/stop)
   B3 hold    → record voice note (start on press, upload on release)
   B4 single  → start AI session (audio-only, provider from wearable_settings)
   B5 single  → start AI session with vision (provider+vision_mode from settings)
@@ -23,14 +23,19 @@ from __future__ import annotations
 import asyncio
 import io
 import os
+import shutil
+import signal
 import time
 import uuid
+import wave
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 
 from supabase import Client, create_client
+
+from config import AUDIO_CHANNELS, AUDIO_SAMPLE_RATE, VIDEO_FPS, VIDEO_RESOLUTION
 
 
 # ---------- module-level state (single-process, single-wearable) ----------
@@ -47,7 +52,12 @@ class _ButtonState:
     last_b6_single_at: float = 0.0       # for double-click detection
     last_b1_toggle_at: float = 0.0       # cooldown to absorb button bounce
     last_b3_toggle_at: float = 0.0       # cooldown for press-to-toggle voice note
-    video_recording: bool = False        # in-progress guard for B2 double (rpicam-vid)
+    video_recording: bool = False        # B2 double toggle is currently recording
+    video_stop_event: Optional[asyncio.Event] = None
+    video_task: Optional[asyncio.Task] = None
+    video_started_at: float = 0.0
+    video_session_id: Optional[str] = None
+    video_id: Optional[str] = None
     sos_active_id: Optional[str] = None  # set while a SOS session is running
     sos_task: Optional[asyncio.Task] = None
 
@@ -193,6 +203,11 @@ async def b2_take_photo(
     `grab_jpeg` is provided by the dashboard so we can re-use the open
     SessionCamera (if any) instead of taking a fresh picamera2 lock.
     """
+    async with _state_lock:
+        if _state.video_recording:
+            await log("📷 photo blocked — B2 video recording is active", "info")
+            return {"error": "video recording active — double-click B2 to stop first"}
+
     settings = await load_wearable_settings()
     jpeg = await asyncio.to_thread(grab_jpeg)
     ts = int(time.time() * 1000)
@@ -216,96 +231,437 @@ async def b2_take_photo(
 
 
 # ============================================================
-# B2 double — short video clip
+# B2 double — toggle video+audio recording
 # ============================================================
 
 async def b2_record_video(
     log: Callable[[str, str], Awaitable[None]],
     broadcast: Callable[[dict[str, Any]], Awaitable[None]],
-    duration_s: float = 5.0,
+    bridge: Any = None,
+    is_ai_session_running: Optional[Callable[[], bool]] = None,
+    duration_s: Optional[float] = None,
+    max_duration_s: Optional[float] = None,
     camera_lock: Any = None,
 ) -> dict[str, Any]:
-    """Record a short MP4 via rpicam-vid, then upload. Synchronous-ish —
-    the simulator click waits ~duration_s.
+    """Toggle B2 video+audio recording.
 
-    Refuses to start a second capture while the first is still running:
-    rpicam-vid takes an exclusive camera lock, so two concurrent runs
-    error out with 'imx708: Unable to set controls: Device or resource busy'.
+    First double-click starts a background recorder. The next double-click
+    requests stop; the background task then finalizes, muxes, uploads, and
+    broadcasts the saved clip. Audio is intentionally pulled from AudioBridge:
+    audio_worker already owns the I2S mic for voice notes and AI sessions, so
+    opening ALSA again with arecord would fail with a busy device.
     """
     async with _state_lock:
         if _state.video_recording:
-            await log("🎥 video already in flight — ignoring this press", "info")
-            return {"error": "video capture already in progress — wait a moment"}
-        _state.video_recording = True
+            stop_event = _state.video_stop_event
+            video_id = _state.video_id
+        else:
+            stop_event = None
+            video_id = None
+
+    if stop_event is not None:
+        stop_event.set()
+        await log("🎥 stopping video recording...", "info")
+        await broadcast({"type": "video_recording_stopping", "video_id": video_id})
+        return {"recording": False, "stopping": True, "video_id": video_id}
+
+    if bridge is None:
+        await log("🎥 video blocked — audio bridge unavailable", "error")
+        return {"error": "audio bridge unavailable"}
+    if shutil.which("rpicam-vid") is None:
+        await log("🎥 video blocked — rpicam-vid not found", "error")
+        return {"error": "rpicam-vid not found"}
+    if shutil.which("ffmpeg") is None:
+        await log("🎥 video blocked — ffmpeg not found", "error")
+        return {"error": "ffmpeg not found"}
+
+    if max_duration_s is None:
+        # Safety valve only. Normal stop is the next B2 double-click.
+        max_duration_s = float(os.getenv("B2_VIDEO_MAX_DURATION", "300"))
+    if duration_s is not None:
+        max_duration_s = max(float(duration_s), float(max_duration_s))
+
+    action = "start"
+    video_id: Optional[str] = None
+    stop_event: Optional[asyncio.Event] = None
+
+    async with _state_lock:
+        if _state.video_recording:
+            stop_event = _state.video_stop_event
+            video_id = _state.video_id
+            action = "stop"
+        elif _state.voice_note_recording:
+            await log("🎥 video blocked — voice note is recording", "info")
+            return {"error": "voice note active — stop it before recording video"}
+        elif _state.sos_active_id:
+            await log("🎥 video blocked — SOS is active", "warning")
+            return {"error": "SOS active — video recording disabled"}
+        else:
+            if is_ai_session_running and is_ai_session_running():
+                await log(
+                    "🎥 video blocked — AI session is using the mic/camera. "
+                    "Double-click B4/B5 to stop it first.",
+                    "warning",
+                )
+                return {"error": "AI session active — cannot record video"}
+            video_id = str(uuid.uuid4())
+            stop_event = asyncio.Event()
+            _state.video_recording = True
+            _state.video_stop_event = stop_event
+            _state.video_started_at = time.time()
+            _state.video_session_id = _state.open_session_id
+            _state.video_id = video_id
+            _state.video_task = asyncio.create_task(_video_recording_run(
+                video_id=video_id,
+                session_id=_state.video_session_id,
+                stop_event=stop_event,
+                max_duration_s=float(max_duration_s),
+                log=log,
+                broadcast=broadcast,
+                bridge=bridge,
+                camera_lock=camera_lock,
+            ))
+
+    if action == "stop":
+        if stop_event is None:
+            await log("🎥 video stop requested, but recorder state was missing", "warning")
+            return {"error": "video recorder state missing"}
+        stop_event.set()
+        await log("🎥 stopping video recording...", "info")
+        await broadcast({"type": "video_recording_stopping", "video_id": video_id})
+        return {"recording": False, "stopping": True, "video_id": video_id}
+
+    await log("🎥 starting video+audio recording...", "info")
+    await broadcast({"type": "video_recording_started", "video_id": video_id})
+    return {
+        "recording": True,
+        "video_id": video_id,
+        "max_duration_s": float(max_duration_s),
+    }
+
+
+async def _video_recording_run(
+    *,
+    video_id: str,
+    session_id: Optional[str],
+    stop_event: asyncio.Event,
+    max_duration_s: float,
+    log: Callable[[str, str], Awaitable[None]],
+    broadcast: Callable[[dict[str, Any]], Awaitable[None]],
+    bridge: Any,
+    camera_lock: Any = None,
+) -> None:
+    settings: Optional[dict[str, Any]] = None
+    ts = int(time.time() * 1000)
+    tmp_base = Path("/tmp") / f"visionlink_b2_{ts}_{video_id[:8]}"
+    video_h264 = tmp_base.with_suffix(".h264")
+    audio_wav = tmp_base.with_suffix(".wav")
+    out_mp4 = tmp_base.with_suffix(".mp4")
+    rpicam_log = tmp_base.with_suffix(".rpicam.log")
+    camera_locked = False
+    proc: Optional[asyncio.subprocess.Process] = None
+    audio_task: Optional[asyncio.Task] = None
+    auto_stopped = False
+    record_started_at = 0.0
+    record_stopped_at = 0.0
 
     try:
-        settings = await load_wearable_settings()
-        sid = _state.open_session_id
-        folder = sid or "_orphan"
-        ts = int(time.time() * 1000)
-        out_path = f"/tmp/vl_video_{ts}.mp4"
-        duration_ms = int(duration_s * 1000)
-
-        # Video-only capture via rpicam-vid + libav -> MP4 in one shot.
-        # The legacy capture_av_mp4.sh muxed audio via arecord, but the I2S
-        # mic is held exclusively by audio_worker for B3 voice notes + AI
-        # sessions, so a parallel arecord always fails with EBUSY. Audio
-        # commentary on videos is a TODO that needs to route through the
-        # AudioBridge instead of opening ALSA directly.
-        cmd = [
-            "rpicam-vid",
-            "-o", out_path,
-            "--width", "1280", "--height", "720", "--framerate", "30",
-            "--codec", "libav", "--libav-format", "mp4",
-            "-t", str(duration_ms),
-            "-n",   # no preview window
-        ]
-        await log(f"🎥 recording {duration_s}s video (no audio)...", "info")
-        if camera_lock is None:
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            _, err = await proc.communicate()
-        else:
-            with camera_lock:
-                proc = await asyncio.create_subprocess_exec(
-                    *cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                _, err = await proc.communicate()
-        if proc.returncode != 0:
-            msg = err.decode(errors='replace')[:300] or "(no stderr)"
-            await log(f"video capture failed: {msg}", "error")
-            return {"error": "video capture failed", "detail": msg}
+        width, height = VIDEO_RESOLUTION
+        fps = int(VIDEO_FPS)
 
         try:
-            with open(out_path, "rb") as f:
-                data = f.read()
-        finally:
-            try: os.unlink(out_path)
-            except OSError: pass
+            dropped = bridge.drain_mic()
+            if dropped:
+                await log(
+                    f"🎥 dropped {dropped} stale mic blocks before video recording",
+                    "info",
+                )
+        except Exception as e:
+            await log(f"🎥 mic drain failed before video: {e}", "warning")
 
+        if stop_event.is_set():
+            await log("🎥 video recording cancelled before camera started", "info")
+            return
+
+        if camera_lock is not None:
+            camera_locked = bool(camera_lock.acquire(blocking=False))
+            if not camera_locked:
+                raise RuntimeError("camera is busy — stop camera/AI session first")
+
+        audio_task = asyncio.create_task(_record_video_audio_wav(
+            bridge=bridge,
+            wav_path=audio_wav,
+            stop_event=stop_event,
+        ))
+
+        cmd = [
+            "rpicam-vid",
+            "-o", str(video_h264),
+            "--width", str(width),
+            "--height", str(height),
+            "--framerate", str(fps),
+            "--bitrate", os.getenv("B2_VIDEO_BITRATE", "5000000"),
+            "-t", "0",
+            "-n",
+        ]
+
+        with open(rpicam_log, "wb") as err_file:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=err_file,
+            )
+            record_started_at = time.time()
+            async with _state_lock:
+                if _state.video_id == video_id:
+                    _state.video_started_at = record_started_at
+            await log("🎥 video+audio recording live — double-click B2 to stop", "info")
+
+            stop_task = asyncio.create_task(stop_event.wait())
+            proc_task = asyncio.create_task(proc.wait())
+            done, pending = await asyncio.wait(
+                {stop_task, proc_task},
+                timeout=max_duration_s,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+
+            if not done:
+                auto_stopped = True
+                stop_event.set()
+                await log(
+                    f"🎥 video hit safety limit ({max_duration_s:.0f}s); stopping",
+                    "warning",
+                )
+            elif proc_task in done and proc.returncode not in (0, None):
+                stop_event.set()
+                detail = _read_text_tail(rpicam_log, 600)
+                raise RuntimeError(
+                    f"rpicam-vid exited early with code {proc.returncode}. {detail}".strip()
+                )
+
+            for task in pending:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
+            record_stopped_at = time.time()
+            await _stop_video_process(proc)
+            proc = None
+
+        audio_frames = 0
+        if audio_task is not None:
+            try:
+                audio_frames = await asyncio.wait_for(audio_task, timeout=7.0)
+            except asyncio.TimeoutError:
+                audio_task.cancel()
+                try:
+                    await audio_task
+                except asyncio.CancelledError:
+                    pass
+                await log("🎥 audio capture did not stop cleanly; continuing with captured data", "warning")
+            except Exception as e:
+                await log(f"🎥 audio capture failed; saving video without audio: {e}", "warning")
+            finally:
+                audio_task = None
+
+        if not video_h264.exists() or video_h264.stat().st_size < 1024:
+            detail = _read_text_tail(rpicam_log, 600)
+            raise RuntimeError(f"rpicam-vid produced no usable video. {detail}".strip())
+
+        await _mux_video_audio(
+            video_h264=video_h264,
+            audio_wav=audio_wav,
+            out_mp4=out_mp4,
+            fps=fps,
+            has_audio=audio_frames > 0 and audio_wav.exists() and audio_wav.stat().st_size > 44,
+        )
+
+        data = out_mp4.read_bytes()
+        folder = session_id or "_orphan"
         storage_path = f"{folder}/video_{ts}.mp4"
+        settings = await load_wearable_settings()
         await _upload_to_storage(storage_path, data, "video/mp4")
+
+        if record_started_at <= 0.0:
+            record_started_at = _state.video_started_at or time.time()
+        if record_stopped_at <= 0.0:
+            record_stopped_at = time.time()
+        duration_s = max(0.0, record_stopped_at - record_started_at)
         sb = _sb_client()
         def _ins():
             sb.table("session_assets").insert({
-                "session_id":   sid,
-                "worker_id":    settings["worker_id"],
+                "session_id":   session_id,
+                "worker_id":    settings["worker_id"] if settings else None,
                 "kind":         "video",
                 "storage_path": storage_path,
-                "duration_s":   duration_s,
+                "duration_s":   round(duration_s, 2),
             }).execute()
         await asyncio.to_thread(_ins)
-        await log(f"🎥 video saved → {storage_path} ({len(data)} bytes)", "info")
-        await broadcast({"type": "video_saved", "path": storage_path, "session_id": sid})
-        return {"ok": True, "path": storage_path, "bytes": len(data), "duration_s": duration_s}
+
+        audio_note = "with audio" if audio_frames > 0 else "without audio (mic produced no frames)"
+        limit_note = " safety-stopped" if auto_stopped else ""
+        await log(
+            f"🎥 video saved{limit_note} → {storage_path} "
+            f"({duration_s:.1f}s, {audio_note}, {len(data)} bytes)",
+            "info" if audio_frames > 0 else "warning",
+        )
+        await broadcast({
+            "type": "video_saved",
+            "path": storage_path,
+            "session_id": session_id,
+            "duration_s": duration_s,
+            "bytes": len(data),
+            "has_audio": audio_frames > 0,
+            "video_id": video_id,
+        })
+    except Exception as e:
+        await log(f"🎥 video recording failed: {e}", "error")
+        await broadcast({"type": "video_failed", "video_id": video_id, "error": str(e)})
     finally:
+        stop_event.set()
+        if proc is not None and proc.returncode is None:
+            await _stop_video_process(proc)
+        if audio_task is not None:
+            audio_task.cancel()
+            try:
+                await audio_task
+            except asyncio.CancelledError:
+                pass
+        if camera_locked and camera_lock is not None:
+            try:
+                camera_lock.release()
+            except RuntimeError:
+                pass
+
+        for path in (video_h264, audio_wav, out_mp4, rpicam_log):
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError:
+                pass
+
         async with _state_lock:
-            _state.video_recording = False
+            if _state.video_id == video_id:
+                _state.video_recording = False
+                _state.video_stop_event = None
+                _state.video_task = None
+                _state.video_started_at = 0.0
+                _state.video_session_id = None
+                _state.video_id = None
+
+
+async def _record_video_audio_wav(
+    *,
+    bridge: Any,
+    wav_path: Path,
+    stop_event: asyncio.Event,
+) -> int:
+    frames = 0
+    with wave.open(str(wav_path), "wb") as wf:
+        wf.setnchannels(int(AUDIO_CHANNELS))
+        wf.setsampwidth(2)
+        wf.setframerate(int(AUDIO_SAMPLE_RATE))
+        while not stop_event.is_set():
+            try:
+                block = await bridge.read_mic_block()
+            except Exception:
+                if stop_event.is_set():
+                    break
+                await asyncio.sleep(0.1)
+                continue
+            if stop_event.is_set():
+                break
+            if block:
+                wf.writeframes(block)
+                frames += len(block) // 2
+    return frames
+
+
+async def _stop_video_process(proc: asyncio.subprocess.Process) -> None:
+    if proc.returncode is not None:
+        return
+    try:
+        proc.send_signal(signal.SIGINT)
+    except ProcessLookupError:
+        return
+    try:
+        await asyncio.wait_for(proc.wait(), timeout=1.0)
+        return
+    except asyncio.TimeoutError:
+        pass
+
+    if proc.returncode is None:
+        proc.terminate()
+    try:
+        await asyncio.wait_for(proc.wait(), timeout=2.0)
+        return
+    except asyncio.TimeoutError:
+        pass
+
+    if proc.returncode is None:
+        proc.kill()
+    await proc.wait()
+
+
+async def _mux_video_audio(
+    *,
+    video_h264: Path,
+    audio_wav: Path,
+    out_mp4: Path,
+    fps: int,
+    has_audio: bool,
+) -> None:
+    cmd = [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel", "error",
+        "-y",
+        "-framerate", str(fps),
+        "-i", str(video_h264),
+    ]
+    if has_audio:
+        cmd += [
+            "-i", str(audio_wav),
+            "-filter:a", "volume=2.5,alimiter=limit=0.95",
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-crf", "22",
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-b:a", "128k",
+            "-shortest",
+            str(out_mp4),
+        ]
+    else:
+        cmd += [
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-crf", "22",
+            "-pix_fmt", "yuv420p",
+            str(out_mp4),
+        ]
+
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, err = await proc.communicate()
+    if proc.returncode != 0:
+        msg = err.decode(errors="replace")[:700] or "(no ffmpeg stderr)"
+        raise RuntimeError(f"ffmpeg mux failed: {msg}")
+    if not out_mp4.exists() or out_mp4.stat().st_size < 1024:
+        raise RuntimeError("ffmpeg produced no usable MP4")
+
+
+def _read_text_tail(path: Path, max_chars: int) -> str:
+    try:
+        return path.read_text(errors="replace")[-max_chars:]
+    except Exception:
+        return ""
 
 
 # ============================================================
@@ -327,6 +683,15 @@ async def b3_voice_note_start(
             "warning",
         )
         return {"error": "AI session active — cannot record voice note"}
+
+    async with _state_lock:
+        if _state.video_recording:
+            await log(
+                "🎙 voice note BLOCKED — B2 video recording is using the mic. "
+                "Double-click B2 to stop it, then try again.",
+                "warning",
+            )
+            return {"error": "video recording active — cannot record voice note"}
 
     # Capture press time IMMEDIATELY. drain_mic + log can take a few hundred
     # ms (drain is patient — see audio_bridge.drain_mic for why), and we want
@@ -499,6 +864,11 @@ async def b4_ai_voice_only(
     session is already running), the user sees the rejection reason rather
     than a misleading "starting" message.
     """
+    async with _state_lock:
+        if _state.video_recording:
+            await log("🤖 B4 blocked — B2 video recording is using the mic", "info")
+            return {"error": "video recording active — double-click B2 to stop first"}
+
     settings = await load_wearable_settings()
     provider = settings["b4_provider"]
     result = await ai_starter(provider, "audio", False)
@@ -514,6 +884,11 @@ async def b5_ai_voice_vision(
     ai_starter: Callable[[str, str, bool], Awaitable[dict[str, Any]]],
 ) -> dict[str, Any]:
     """Start an AI session with vision per wearable_settings.b5_*."""
+    async with _state_lock:
+        if _state.video_recording:
+            await log("👁 B5 blocked — B2 video recording is using the camera/mic", "info")
+            return {"error": "video recording active — double-click B2 to stop first"}
+
     settings = await load_wearable_settings()
     provider = settings["b5_provider"]
     vision_mode = settings["b5_vision_mode"]   # snap_on_press | gemini_video | auto_snap_4s
@@ -592,6 +967,18 @@ async def b6_sos_trigger(
       5. Hard timeout from settings.sos_max_duration_s
     """
     sb = _sb_client()
+
+    async with _state_lock:
+        video_stop_event = _state.video_stop_event if _state.video_recording else None
+        video_id = _state.video_id if _state.video_recording else None
+    if video_stop_event is not None:
+        video_stop_event.set()
+        video_suffix = f" ({video_id})" if video_id else ""
+        await log(
+            f"🎥 stopping video recording for SOS{video_suffix}",
+            "warning",
+        )
+        await broadcast({"type": "video_recording_stopping", "video_id": video_id, "reason": "sos"})
 
     async with _state_lock:
         active_id = _state.sos_active_id

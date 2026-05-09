@@ -1480,8 +1480,14 @@ async def button_dispatch(n: int, event: str) -> JSONResponse:
             grab_jpeg=lambda: _grab_jpeg_for_buttons(),
         ))
     elif (n, event) == (2, "double"):
+        def _ai_running() -> bool:
+            return ((live_task and not live_task.done())
+                    or (oai_task and not oai_task.done()))
         result = await _run(lambda: bh.b2_record_video(
-            log, broadcast, camera_lock=_camera_lock,
+            log, broadcast,
+            bridge=bridge,
+            is_ai_session_running=_ai_running,
+            camera_lock=_camera_lock,
         ))
     elif (n, event) == (3, "single"):
         # Press-to-toggle voice note — first press starts, second stops.

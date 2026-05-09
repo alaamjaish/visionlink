@@ -1,9 +1,11 @@
+import asyncio
 import threading
 import time
 import unittest
 
 import config
 from src.hardware import buttons as buttons_mod
+from src.subsystems import button_handlers as bh
 
 
 class FakeGPIO:
@@ -118,6 +120,71 @@ class ButtonHandlerGestureTests(unittest.TestCase):
 
         handler.cleanup()
         self.assertEqual(events, ["double"])
+
+
+class ButtonVideoToggleTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self._old_state = bh._state
+        self._old_which = bh.shutil.which
+        self._old_video_run = bh._video_recording_run
+        bh._state = bh._ButtonState()
+        bh.shutil.which = lambda name: f"/usr/bin/{name}"
+        self.logs = []
+        self.broadcasts = []
+
+    async def asyncTearDown(self):
+        if bh._state.video_stop_event is not None:
+            bh._state.video_stop_event.set()
+        if bh._state.video_task is not None:
+            try:
+                await asyncio.wait_for(bh._state.video_task, timeout=1)
+            except BaseException:
+                bh._state.video_task.cancel()
+        bh._video_recording_run = self._old_video_run
+        bh.shutil.which = self._old_which
+        bh._state = self._old_state
+
+    async def _log(self, msg, level):
+        self.logs.append((level, msg))
+
+    async def _broadcast(self, payload):
+        self.broadcasts.append(payload)
+
+    async def test_b2_double_toggles_video_recording(self):
+        async def fake_video_run(*, video_id, stop_event, **kwargs):
+            await stop_event.wait()
+            async with bh._state_lock:
+                if bh._state.video_id == video_id:
+                    bh._state.video_recording = False
+                    bh._state.video_stop_event = None
+                    bh._state.video_task = None
+                    bh._state.video_started_at = 0.0
+                    bh._state.video_session_id = None
+                    bh._state.video_id = None
+
+        bh._video_recording_run = fake_video_run
+
+        start = await bh.b2_record_video(
+            self._log,
+            self._broadcast,
+            bridge=object(),
+            is_ai_session_running=lambda: False,
+        )
+        self.assertTrue(start["recording"])
+        self.assertTrue(bh._state.video_recording)
+
+        stop = await bh.b2_record_video(
+            self._log,
+            self._broadcast,
+            bridge=object(),
+            is_ai_session_running=lambda: False,
+        )
+        self.assertTrue(stop["stopping"])
+
+        task = bh._state.video_task
+        if task is not None:
+            await asyncio.wait_for(task, timeout=1)
+        self.assertFalse(bh._state.video_recording)
 
 
 if __name__ == "__main__":
