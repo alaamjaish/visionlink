@@ -1353,6 +1353,16 @@ async def button_dispatch(n: int, event: str) -> JSONResponse:
         ))
     elif (n, event) == (2, "double"):
         result = await _run(lambda: bh.b2_record_video(log, broadcast))
+    elif (n, event) == (3, "single"):
+        # Press-to-toggle voice note — first press starts, second stops.
+        # The physical bridge sends this for B3 (the simulator may still
+        # use hold_start/hold_end handled below).
+        def _ai_running() -> bool:
+            return ((live_task and not live_task.done())
+                    or (oai_task and not oai_task.done()))
+        result = await _run(lambda: bh.b3_voice_note_toggle(
+            log, broadcast, bridge, is_ai_session_running=_ai_running,
+        ))
     elif (n, event) == (3, "hold_start"):
         def _ai_running() -> bool:
             return ((live_task and not live_task.done())

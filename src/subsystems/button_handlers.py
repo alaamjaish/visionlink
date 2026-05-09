@@ -45,6 +45,9 @@ class _ButtonState:
     voice_note_started_at: float = 0.0
     voice_note_task: Optional[asyncio.Task] = None
     last_b6_single_at: float = 0.0       # for double-click detection
+    last_b1_toggle_at: float = 0.0       # cooldown to absorb button bounce
+    last_b3_toggle_at: float = 0.0       # cooldown for press-to-toggle voice note
+    video_recording: bool = False        # in-progress guard for B2 double (rpicam-vid)
     sos_active_id: Optional[str] = None  # set while a SOS session is running
     sos_task: Optional[asyncio.Task] = None
 
@@ -130,6 +133,17 @@ async def b1_doc_session_toggle(
     log: Callable[[str, str], Awaitable[None]],
     broadcast: Callable[[dict[str, Any]], Awaitable[None]],
 ) -> dict[str, Any]:
+    # Cooldown: physical button bounce can fire two falling edges within
+    # a few ms, which would open-then-immediately-close (or vice versa).
+    # Hardware debounce alone (50 ms) wasn't catching all of it on this
+    # board, so we add a soft cooldown — the second toggle within 800 ms
+    # is silently ignored.
+    B1_COOLDOWN_S = 0.8
+    now = time.time()
+    if now - _state.last_b1_toggle_at < B1_COOLDOWN_S:
+        return {"action": "ignored", "reason": "cooldown — too soon after last toggle"}
+    _state.last_b1_toggle_at = now
+
     settings = await load_wearable_settings()
     sb = _sb_client()
     async with _state_lock:
@@ -210,63 +224,78 @@ async def b2_record_video(
     broadcast: Callable[[dict[str, Any]], Awaitable[None]],
     duration_s: float = 5.0,
 ) -> dict[str, Any]:
-    """Record a short MP4 via the existing capture_av_mp4.sh helper, then
-    upload it. Synchronous-ish — the simulator click waits ~duration_s."""
-    settings = await load_wearable_settings()
-    sid = _state.open_session_id
-    folder = sid or "_orphan"
-    ts = int(time.time() * 1000)
-    out_path = f"/tmp/vl_video_{ts}.mp4"
-    duration_ms = int(duration_s * 1000)
+    """Record a short MP4 via rpicam-vid, then upload. Synchronous-ish —
+    the simulator click waits ~duration_s.
 
-    # Video-only capture via rpicam-vid + libav -> MP4 in one shot.
-    # The legacy capture_av_mp4.sh muxed audio via arecord, but the I2S
-    # mic is held exclusively by audio_worker for B3 voice notes + AI
-    # sessions, so a parallel arecord always fails with EBUSY. Audio
-    # commentary on videos is a TODO that needs to route through the
-    # AudioBridge instead of opening ALSA directly.
-    cmd = [
-        "rpicam-vid",
-        "-o", out_path,
-        "--width", "1280", "--height", "720", "--framerate", "30",
-        "--codec", "libav", "--libav-format", "mp4",
-        "-t", str(duration_ms),
-        "-n",   # no preview window
-    ]
-    await log(f"🎥 recording {duration_s}s video (no audio)...", "info")
-    proc = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    _, err = await proc.communicate()
-    if proc.returncode != 0:
-        msg = err.decode(errors='replace')[:300] or "(no stderr)"
-        await log(f"video capture failed: {msg}", "error")
-        return {"error": "video capture failed", "detail": msg}
+    Refuses to start a second capture while the first is still running:
+    rpicam-vid takes an exclusive camera lock, so two concurrent runs
+    error out with 'imx708: Unable to set controls: Device or resource busy'.
+    """
+    async with _state_lock:
+        if _state.video_recording:
+            await log("🎥 video already in flight — ignoring this press", "info")
+            return {"error": "video capture already in progress — wait a moment"}
+        _state.video_recording = True
 
     try:
-        with open(out_path, "rb") as f:
-            data = f.read()
-    finally:
-        try: os.unlink(out_path)
-        except OSError: pass
+        settings = await load_wearable_settings()
+        sid = _state.open_session_id
+        folder = sid or "_orphan"
+        ts = int(time.time() * 1000)
+        out_path = f"/tmp/vl_video_{ts}.mp4"
+        duration_ms = int(duration_s * 1000)
 
-    storage_path = f"{folder}/video_{ts}.mp4"
-    await _upload_to_storage(storage_path, data, "video/mp4")
-    sb = _sb_client()
-    def _ins():
-        sb.table("session_assets").insert({
-            "session_id":   sid,
-            "worker_id":    settings["worker_id"],
-            "kind":         "video",
-            "storage_path": storage_path,
-            "duration_s":   duration_s,
-        }).execute()
-    await asyncio.to_thread(_ins)
-    await log(f"🎥 video saved → {storage_path} ({len(data)} bytes)", "info")
-    await broadcast({"type": "video_saved", "path": storage_path, "session_id": sid})
-    return {"ok": True, "path": storage_path, "bytes": len(data), "duration_s": duration_s}
+        # Video-only capture via rpicam-vid + libav -> MP4 in one shot.
+        # The legacy capture_av_mp4.sh muxed audio via arecord, but the I2S
+        # mic is held exclusively by audio_worker for B3 voice notes + AI
+        # sessions, so a parallel arecord always fails with EBUSY. Audio
+        # commentary on videos is a TODO that needs to route through the
+        # AudioBridge instead of opening ALSA directly.
+        cmd = [
+            "rpicam-vid",
+            "-o", out_path,
+            "--width", "1280", "--height", "720", "--framerate", "30",
+            "--codec", "libav", "--libav-format", "mp4",
+            "-t", str(duration_ms),
+            "-n",   # no preview window
+        ]
+        await log(f"🎥 recording {duration_s}s video (no audio)...", "info")
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, err = await proc.communicate()
+        if proc.returncode != 0:
+            msg = err.decode(errors='replace')[:300] or "(no stderr)"
+            await log(f"video capture failed: {msg}", "error")
+            return {"error": "video capture failed", "detail": msg}
+
+        try:
+            with open(out_path, "rb") as f:
+                data = f.read()
+        finally:
+            try: os.unlink(out_path)
+            except OSError: pass
+
+        storage_path = f"{folder}/video_{ts}.mp4"
+        await _upload_to_storage(storage_path, data, "video/mp4")
+        sb = _sb_client()
+        def _ins():
+            sb.table("session_assets").insert({
+                "session_id":   sid,
+                "worker_id":    settings["worker_id"],
+                "kind":         "video",
+                "storage_path": storage_path,
+                "duration_s":   duration_s,
+            }).execute()
+        await asyncio.to_thread(_ins)
+        await log(f"🎥 video saved → {storage_path} ({len(data)} bytes)", "info")
+        await broadcast({"type": "video_saved", "path": storage_path, "session_id": sid})
+        return {"ok": True, "path": storage_path, "bytes": len(data), "duration_s": duration_s}
+    finally:
+        async with _state_lock:
+            _state.video_recording = False
 
 
 # ============================================================
@@ -289,6 +318,24 @@ async def b3_voice_note_start(
         )
         return {"error": "AI session active — cannot record voice note"}
 
+    # Drain any stale mic blocks the worker has been buffering since the last
+    # consumer (AI session or prior voice note) ended. AudioBridge mic_q is
+    # capped at 2000 blocks × 100 ms = 200 s (~3 min 20 s) — without this
+    # drain, a fresh voice note replays whatever was sitting in the queue
+    # ahead of the press, producing 3-minute "recordings" of unrelated audio.
+    try:
+        dropped = bridge.drain_mic()
+        if dropped:
+            await log(
+                f"🎙 dropped {dropped} stale mic blocks "
+                f"(~{dropped * 0.1:.1f}s of buffered audio) before recording",
+                "info",
+            )
+    except Exception as e:
+        # drain_mic should never throw, but if the bridge isn't ready, don't
+        # block the user from starting their note — just log and continue.
+        print(f"[b3] drain_mic failed: {e!r}", flush=True)
+
     async with _state_lock:
         if _state.voice_note_recording:
             return {"already_recording": True}
@@ -296,7 +343,7 @@ async def b3_voice_note_start(
         _state.voice_note_buffer = bytearray()
         _state.voice_note_started_at = time.time()
 
-    await log("🎙 voice note recording... (release to stop)", "info")
+    await log("🎙 voice note recording... (press B3 again to stop)", "info")
 
     async def _capture_loop():
         try:
@@ -335,8 +382,18 @@ async def b3_voice_note_end(
 
     duration_s = time.time() - started
     if len(buf) < 1600:  # less than 50 ms — ignore
-        await log("🎙 voice note too short — discarded", "info")
-        return {"too_short": True, "duration_s": duration_s}
+        if len(buf) == 0:
+            # Empty buffer means the mic stream produced no data at all —
+            # usually audio_worker can't open the I2S device (missing/broken
+            # ~/.asoundrc, busy hw:3,0, etc). Surface that, not "too short".
+            await log(
+                "🎙 voice note received NO audio — mic not flowing. "
+                "Check audio_worker / ~/.asoundrc.",
+                "warning",
+            )
+        else:
+            await log("🎙 voice note too short — discarded", "info")
+        return {"too_short": True, "duration_s": duration_s, "bytes": len(buf)}
 
     # Wrap raw 16k S16 mono PCM in a WAV header
     wav = _pcm_to_wav(buf, sample_rate=16000, channels=1)
@@ -378,6 +435,35 @@ def _pcm_to_wav(pcm: bytes, sample_rate: int = 16000, channels: int = 1) -> byte
 
 
 # ============================================================
+# B3 — single-press toggle (alternative to hold-to-record)
+# ============================================================
+#
+# Calling convention: every B3 press fires this. The handler decides
+# whether to START or STOP based on _state.voice_note_recording.
+# Press 1 → start. Press 2 → stop & upload. Plus an 800 ms cooldown
+# so physical button bounce can't accidentally double-toggle.
+
+async def b3_voice_note_toggle(
+    log: Callable[[str, str], Awaitable[None]],
+    broadcast: Callable[[dict[str, Any]], Awaitable[None]],
+    bridge: Any,
+    is_ai_session_running: Optional[Callable[[], bool]] = None,
+) -> dict[str, Any]:
+    B3_COOLDOWN_S = 0.8
+    now = time.time()
+    if now - _state.last_b3_toggle_at < B3_COOLDOWN_S:
+        return {"action": "ignored", "reason": "cooldown — too soon after last toggle"}
+    _state.last_b3_toggle_at = now
+
+    if _state.voice_note_recording:
+        # Currently recording → stop and upload
+        return await b3_voice_note_end(log, broadcast)
+    else:
+        # Not recording → start
+        return await b3_voice_note_start(log, bridge, is_ai_session_running=is_ai_session_running)
+
+
+# ============================================================
 # B4 / B5 — start AI session (audio / audio+vision)
 # ============================================================
 #
@@ -390,11 +476,20 @@ async def b4_ai_voice_only(
     ai_starter: Callable[[str, str, bool], Awaitable[dict[str, Any]]],
 ) -> dict[str, Any]:
     """Start the audio-only AI session using the provider configured
-    in wearable_settings.b4_provider."""
+    in wearable_settings.b4_provider.
+
+    Logs reflect what actually happened — if ai_starter rejects (e.g. a
+    session is already running), the user sees the rejection reason rather
+    than a misleading "starting" message.
+    """
     settings = await load_wearable_settings()
     provider = settings["b4_provider"]
-    await log(f"🤖 B4 → starting AI ({provider}) audio-only session", "info")
-    return await ai_starter(provider, "audio", False)
+    result = await ai_starter(provider, "audio", False)
+    if result.get("error"):
+        await log(f"🤖 B4 → {result['error']}", "info")
+    else:
+        await log(f"🤖 B4 → AI ({provider}) audio session started", "info")
+    return result
 
 
 async def b5_ai_voice_vision(
@@ -412,10 +507,14 @@ async def b5_ai_voice_vision(
         gemini_mode = "snap"   # gemini supports snap-on-press in 'snap' mode
     else:
         gemini_mode = "audio"  # OpenAI uses audio mode + image injection
-    await log(
-        f"👁 B5 → AI ({provider}, vision={vision_mode}) starting", "info"
-    )
-    return await ai_starter(provider, gemini_mode, True)
+    result = await ai_starter(provider, gemini_mode, True)
+    if result.get("error"):
+        await log(f"👁 B5 → {result['error']}", "info")
+    else:
+        await log(
+            f"👁 B5 → AI ({provider}, vision={vision_mode}) started", "info"
+        )
+    return result
 
 
 async def b_ai_stop_any(

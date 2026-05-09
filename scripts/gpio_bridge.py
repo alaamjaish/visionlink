@@ -36,7 +36,10 @@ import config
 from src.hardware.buttons import ButtonHandler
 
 DASHBOARD_URL = "http://localhost:8000"
-HTTP_TIMEOUT = 5.0
+HTTP_TIMEOUT = 20.0   # was 5.0; B2 video path is ~7s (rpicam-vid + upload),
+                      # SOS startup can be longer. 5s timed out and printed
+                      # misleading red ERR lines while the dashboard was
+                      # finishing the work successfully.
 
 
 def _ts() -> str:
@@ -102,10 +105,11 @@ def main() -> None:
         on_single=lambda: post(2, "single"),
         on_double=lambda: post(2, "double"),
     )
+    # B3: press-to-toggle voice note (press 1 starts, press 2 stops).
+    # Backend handler: b3_voice_note_toggle (with 800 ms cooldown for bounce).
     buttons.register(
         config.BTN_VOICE_NOTE,
-        on_hold_start=lambda: post(3, "hold_start"),
-        on_hold_end=lambda: post(3, "hold_end"),
+        on_single=lambda: post(3, "single"),
     )
     buttons.register(
         config.BTN_AI_CAMERA,

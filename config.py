@@ -58,8 +58,8 @@ AUDIO_ARECORD_FORMAT = os.getenv("AUDIO_ARECORD_FORMAT", "S16_LE")
 
 # === Buttons (BCM GPIO pin numbers) ===
 # Documentation mode
-BTN_SESSION = 17       # Button 1: Start/Stop session
-BTN_PHOTO_VIDEO = 27   # Button 2: Photo (single) / Video (double)
+BTN_SESSION = 23       # Button 1: Start/Stop session  (moved from GPIO 17 → GPIO 23 / Pin 16, breadboard conflict 2026-05-08)
+BTN_PHOTO_VIDEO = 25   # Button 2 / Visual: Photo (single) / Video (double). Moved 27→25 (Pin 13→Pin 22) to escape breadboard conflict.
 BTN_VOICE_NOTE = 22    # Button 3: Voice note (hold)
 
 # AI Assistant mode
@@ -70,7 +70,13 @@ BTN_AI_AGENT = 13      # Button 6: Agent commands
 ALL_BUTTONS = [BTN_SESSION, BTN_PHOTO_VIDEO, BTN_VOICE_NOTE,
                BTN_AI_CAMERA, BTN_AI_VOICE, BTN_AI_AGENT]
 
-BUTTON_DEBOUNCE_MS = 50     # Software debounce (RPi.GPIO bouncetime). Tactile
+BUTTON_DEBOUNCE_MS = 200    # Software debounce (RPi.GPIO bouncetime). Tactile
+                            # buttons on this board bounce 50–200 ms; with the
+                            # old 50 ms a single press registered 2 falling
+                            # edges, which the gesture detector then read as a
+                            # double-click (B2 single-press → video instead of
+                            # photo). 200 ms keeps real double-clicks usable
+                            # (DOUBLE_PRESS_WINDOW is 500 ms).
 DOUBLE_PRESS_WINDOW = 0.5  # seconds
 
 # === AI ===

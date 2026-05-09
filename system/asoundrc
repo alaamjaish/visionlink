@@ -1,0 +1,36 @@
+# VisionLink ALSA user config
+# I2S sound card is card 3 (snd_rpi_googlevoicehat_soundcard).
+# SPH0645 mic SEL pin is grounded -> mic data is on the LEFT channel.
+# `plug` re-negotiates format/rate/channels for clients (e.g. PortAudio
+# asks for 16 kHz S16 mono; plug downmixes from the card's native
+# 2-channel S32 48 kHz stream).
+#
+# Named PCMs the dashboard audio_worker.py looks up by EXACT name:
+#   mic_left, speaker, default
+
+pcm.!default {
+    type asym
+    playback.pcm "speaker"
+    capture.pcm "mic_left"
+}
+
+pcm.speaker {
+    type plug
+    slave.pcm "hw:3,0"
+}
+
+pcm.mic_left {
+    type plug
+    slave.pcm "hw:3,0"
+}
+
+pcm.mic_left_raw {
+    type hw
+    card 3
+    device 0
+}
+
+ctl.!default {
+    type hw
+    card 3
+}
