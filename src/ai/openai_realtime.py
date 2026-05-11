@@ -399,6 +399,8 @@ class OpenAISession:
                         f"({muted_s:.1f}s); not sending mic while OpenAI audio plays"
                     )
                 continue
+            if muted:
+                muted = 0
 
             arr = np.frombuffer(bytes(data), dtype=np.int16).astype(np.int32)
             if arr.size == 0:

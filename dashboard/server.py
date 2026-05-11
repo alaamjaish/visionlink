@@ -582,6 +582,8 @@ async def run_live_session(
                         if muted % 20 == 0:
                             dlog(f"mic muted ({muted} blocks, half-duplex while Gemini talks)")
                         continue
+                    if muted:
+                        muted = 0
                     raw = bytes(data)
                     arr = np.frombuffer(raw, dtype=np.int16).astype(np.int32)
                     if arr.size:
