@@ -384,7 +384,7 @@ auth-based per-row policies.
 
 ## 9.1 Voice Command Center (worker simulator)
 
-- URL: `http://192.168.0.31:8000`
+- URL: `http://visionlink.local:8000` (mDNS — works on any network the Pi joins)
 - Tech: FastAPI + vanilla HTML/JS/Tailwind
 - Audience: developer or worker testing the wearable
 - Has: 6 on-screen buttons matching the physical buttons, live AI
@@ -392,7 +392,7 @@ auth-based per-row policies.
 
 ## 9.2 Ops Dashboard (supervisor)
 
-- URL: `http://192.168.0.31:3000`
+- URL: `http://visionlink.local:3000` (mDNS — works on any network the Pi joins)
 - Tech: Next.js 16 + React 19 + Tailwind 4
 - Audience: factory supervisor
 

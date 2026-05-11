@@ -103,7 +103,7 @@
    - `ANTHROPIC_API_KEY` — get at console.anthropic.com
    - `RESEND_API_KEY` — get at resend.com
 2. Supabase `components` table created (SQL in Phase C above)
-3. Pi powered, on Wi-Fi, dashboard reachable at http://192.168.0.31:8000
+3. Pi powered, on Wi-Fi, dashboard reachable at http://visionlink.local:8000
 4. All 6 buttons physically pressable (not stuck)
 
 ---

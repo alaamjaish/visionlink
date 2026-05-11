@@ -716,7 +716,7 @@ auth-based per-row policies.</p>
 <h1>9. The Two Web Dashboards</h1>
 <h2>9.1 Voice Command Center (worker simulator)</h2>
 <ul>
-<li>URL: <code>http://192.168.0.31:8000</code></li>
+<li>URL: <code>http://visionlink.local:8000</code> (mDNS — works on any network the Pi joins)</li>
 <li>Tech: FastAPI + vanilla HTML/JS/Tailwind</li>
 <li>Audience: developer or worker testing the wearable</li>
 <li>Has: 6 on-screen buttons matching the physical buttons, live AI
@@ -724,7 +724,7 @@ transcript, recent captures, debug overrides</li>
 </ul>
 <h2>9.2 Ops Dashboard (supervisor)</h2>
 <ul>
-<li>URL: <code>http://192.168.0.31:3000</code></li>
+<li>URL: <code>http://visionlink.local:3000</code> (mDNS — works on any network the Pi joins)</li>
 <li>Tech: Next.js 16 + React 19 + Tailwind 4</li>
 <li>Audience: factory supervisor</li>
 </ul>

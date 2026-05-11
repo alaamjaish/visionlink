@@ -393,7 +393,11 @@ class OpenAISession:
             if self.assistant_speaking.is_set():
                 muted += 1
                 if muted % 20 == 0:
-                    self.dlog(f"[oai mic] muted ({muted} blocks, half-duplex)")
+                    muted_s = muted * BLOCK / MIC_RATE
+                    self.dlog(
+                        f"[oai mic] local echo guard muted {muted} blocks "
+                        f"({muted_s:.1f}s); not sending mic while OpenAI audio plays"
+                    )
                 continue
 
             arr = np.frombuffer(bytes(data), dtype=np.int16).astype(np.int32)

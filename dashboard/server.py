@@ -1394,32 +1394,59 @@ async def _button_ai_stopper() -> dict[str, Any]:
     return {"status": "stopping", "stopped": stopped}
 
 
-async def _b5_auto_snap_when_ready() -> None:
+async def _b5_auto_snap_when_ready(
+    expected_provider: str,
+    expected_task: asyncio.Task,
+) -> None:
     """Wait up to ~6 seconds for the live session to be connected, then
     grab one frame from the camera and inject it. This is what makes B5
     feel like 'show me what I'm pointing at' instead of 'open camera and
-    do nothing'."""
+    do nothing'.
+
+    The task is tied to the specific B5 session that scheduled it. Without
+    that guard, a cancelled B5 startup can wake up later and inject a stale
+    image into a completely separate B4 audio session.
+    """
     for _ in range(60):  # ~6 s @ 100ms
+        if expected_task.done():
+            dlog("B5 auto-snap abandoned — owning session stopped before ready")
+            return
+
         oai_ready = (
-            oai_session is not None
+            expected_provider == "openai"
+            and oai_task is expected_task
+            and oai_session is not None
             and getattr(oai_session, "connection", None) is not None
         )
-        if current_session is not None or oai_ready:
+        gemini_ready = (
+            expected_provider == "gemini"
+            and live_task is expected_task
+            and current_session is not None
+            and live_mode in ("snap", "video")
+        )
+
+        if oai_ready or gemini_ready:
             # Let the session settle a beat before injecting (otherwise the
             # frame races the very first user audio block)
             await asyncio.sleep(0.6)
+            if expected_task.done():
+                dlog("B5 auto-snap abandoned — owning session stopped during settle")
+                return
             try:
                 jpeg = await asyncio.to_thread(_grab_jpeg_for_buttons)
-                if oai_session is not None:
+                if oai_ready and oai_session is not None:
                     await oai_session.send_image(
                         jpeg,
                         prompt="The worker just pointed the camera at "
                                "something. Briefly say what you can see.",
                     )
-                elif current_session is not None and live_mode in ("snap", "video"):
+                elif gemini_ready and current_session is not None:
                     await current_session.send_realtime_input(
                         video=types.Blob(data=jpeg, mime_type="image/jpeg")
                     )
+                else:
+                    dlog("B5 auto-snap abandoned — session owner changed")
+                    return
                 await log("👁 B5 auto-snap sent — agent should comment on it", "info")
                 await broadcast({"type": "frame_sent", "n": -1, "auto": True})
             except Exception as e:
@@ -1522,7 +1549,16 @@ async def button_dispatch(n: int, event: str) -> JSONResponse:
             result = await _run(lambda: _b5_snap_existing())
         else:
             result = await _run(lambda: bh.b5_ai_voice_vision(log, _button_ai_starter))
-            asyncio.create_task(_b5_auto_snap_when_ready())
+            started_provider = result.get("started") if isinstance(result, dict) else None
+            expected_task = (
+                oai_task if started_provider == "openai" else
+                live_task if started_provider == "gemini" else
+                None
+            )
+            if started_provider in ("openai", "gemini") and expected_task is not None:
+                asyncio.create_task(
+                    _b5_auto_snap_when_ready(started_provider, expected_task)
+                )
     elif (n, event) == (5, "double"):
         result = await _run(lambda: bh.b_ai_stop_any(log, _button_ai_stopper))
     elif (n, event) == (6, "single"):

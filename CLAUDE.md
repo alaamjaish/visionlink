@@ -49,6 +49,26 @@ page numbers, A4 — for handing to the professor).
 - Cloud: **Supabase** (PostgreSQL + storage + realtime) + **Gemini**
   + **OpenAI Realtime** + **Gmail SMTP**
 
+## Reaching the Pi from another machine
+
+Always use the **mDNS hostname `visionlink.local`** — not an IP. The hostname
+resolves to whatever IP the Pi has on the current network (home Wi-Fi, iPhone
+hotspot, school Wi-Fi, etc.) via Bonjour/Avahi, so URLs don't break when the
+network changes.
+
+- Voice command center: `http://visionlink.local:8000`
+- Ops dashboard:        `http://visionlink.local:3000`
+- SSH:                  `ssh visionlink` (config alias → `visionlink.local`)
+
+> Windows laptops need Apple Bonjour installed for `.local` to resolve (it
+> usually is via iTunes/printer drivers; otherwise free 5 MB install). macOS
+> and Linux have it built in.
+
+The team's network-resilience strategy — including the spoofed-SSID hotspot
+trick that lets the Pi join any teammate's phone on demo day — is documented
+in [`Documentation/2.4g.md`](Documentation/2.4g.md). Read that before doing
+any network/SSH/Wi-Fi work on this project.
+
 ## Where to find current state
 
 - `Documentation/MASTER.md` — comprehensive reference (this is what
@@ -73,6 +93,9 @@ technical. When explaining things:
 - Internal Python button numbering (`BTN_SESSION` etc.) — leave alone.
 - `dashboard/audio_worker.py` and `dashboard/audio_bridge.py` — load-
   bearing, don't refactor without a specific reason.
+- **Don't hardcode the Pi's IP address anywhere.** The IP changes every
+  time the Pi joins a new network. Use `visionlink.local` (see
+  "Reaching the Pi" above).
 
 ## Project basics
 

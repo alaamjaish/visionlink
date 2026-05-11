@@ -6,8 +6,8 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=visionlink
-WorkingDirectory=/home/visionlink/Desktop/VisionLink
-ExecStart=/usr/bin/python3 /home/visionlink/Desktop/VisionLink/main.py
+WorkingDirectory=/home/visionlink/Desktop/visionlink
+ExecStart=/usr/bin/python3 /home/visionlink/Desktop/visionlink/main.py
 Restart=on-failure
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
