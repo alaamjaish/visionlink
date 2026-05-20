@@ -41,3 +41,9 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# Netlify CLI runtime state (site ID + auth cache)
+.netlify/
+
+# npm
+node_modules/

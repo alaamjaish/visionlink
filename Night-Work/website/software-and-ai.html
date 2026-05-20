@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Yazılım &amp; YZ — VisionLink</title>
+  <meta name="description" content="VisionLink'in arkasındaki yazılım yığını, YZ sağlayıcıları ve fonksiyon-çağrı katmanı." />
+  <link rel="icon" type="image/svg+xml" href="assets/logo.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">Beyinler</span>
+    <h1>Yazılım &amp; YZ</h1>
+    <p class="lead">Pi üzerinde üç bağımsız süreç, üç bulut YZ sağlayıcısı, altı araçlı fonksiyon-çağrı katmanı ve on bir gerçek zamanlı panel.</p>
+  </div>
+</section>
+
+<section class="section section-anchor" id="stack">
+  <div class="container">
+    <h2>Yığın</h2>
+    <div class="table-wrap" style="margin-top: 1.4rem;">
+      <table>
+        <thead><tr><th>Katman</th><th>Teknoloji</th><th>Neden</th></tr></thead>
+        <tbody>
+          <tr><td>HTTP / WebSocket sunucu</td><td><strong>FastAPI</strong> + Uvicorn</td><td>Asenkron-öncelikli Python, otomatik OpenAPI dokümanları, gerçek zamanlı olay yönetimi için ideal</td></tr>
+          <tr><td>Süpervizör arayüzü</td><td><strong>Next.js 16</strong> + React 19 + Tailwind 4</td><td>App-router, server components, Turbopack — modern hızlı geliştirme deneyimi</td></tr>
+          <tr><td>Bulut veritabanı</td><td><strong>Supabase</strong> (Postgres + Storage + Realtime)</td><td>Realtime push'lu yönetilen Postgres, S3-uyumlu depolama, resmi Python &amp; JS SDK'ları</td></tr>
+          <tr><td>GPIO</td><td>RPi.GPIO + lgpio + gpiozero</td><td>Debounce'lu düşen-kenar kesmeleriyle standart Pi GPIO</td></tr>
+          <tr><td>Kamera</td><td><strong>picamera2</strong></td><td>Donanım MMAL hızlandırmalı modern Pi Camera kütüphanesi</td></tr>
+          <tr><td>Ses yakalama / oynatma</td><td>sounddevice + özel <code>AudioBridge</code></td><td>Doğrudan I²S cihaz erişimi, düşük gecikmeli mikrofon akışı, TTS sırasında yarı çift yönlü susturma</td></tr>
+          <tr><td>Sesli YZ</td><td><strong>google-genai</strong> SDK (Gemini Live) ve <strong>OpenAI</strong> SDK (Realtime)</td><td>WebSocket üzerinden çift yönlü akış sesi + görüntüsü</td></tr>
+          <tr><td>E-posta</td><td><strong>smtplib</strong> (Gmail) + <strong>resend</strong> (alternatif)</td><td>İki sağlayıcı; Gmail varsayılan</td></tr>
+          <tr><td>QR kodlar</td><td>pyzbar</td><td>Pi Camera karesi → QR string çözümleme</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="section section-anchor" id="processes">
+  <div class="container">
+    <h2>Pi üzerinde üç süreç</h2>
+    <p class="lead">Bağımsız süreçler izolasyon sağlar: birinde çökme diğerlerini öldüremez. <code>audio_worker</code>, FastAPI'nin bir alt sürecidir; bir C-seviyesi ALSA assertion'ı yalnızca worker'ı çökertir — ebeveyn süreç 1.5 sn içinde yeniden başlatır.</p>
+
+    <div class="grid cols-3" style="margin-top: 2rem;">
+      <div class="card">
+        <div class="kicker">Süreç 1</div>
+        <h3>GPIO Bridge</h3>
+        <p><code>scripts/gpio_bridge.py</code></p>
+        <p>Altı GPIO pinine sahiptir. Her hareketi <code>single</code>, <code>double</code>, <code>hold_start</code> veya <code>hold_end</code> olarak sınıflandırır ve <code>/api/button/&lt;n&gt;/&lt;event&gt;</code>'a POST eder.</p>
+      </div>
+      <div class="card">
+        <div class="kicker">Süreç 2</div>
+        <h3>FastAPI Panel</h3>
+        <p><code>dashboard/server.py</code> · port 8000</p>
+        <p>Ses komuta merkezi, WebSocket transkripti, kamera kilit yöneticisi, <code>audio_worker</code> alt sürecini barındırır. ~1 800 satır.</p>
+      </div>
+      <div class="card">
+        <div class="kicker">Süreç 3</div>
+        <h3>Operasyon Paneli</h3>
+        <p><code>ops/</code> · port 3000</p>
+        <p>Next.js 16 + React 19. Gerçek zamanlı paneller ve CRUD için <code>@supabase/supabase-js</code> üzerinden Supabase'le doğrudan konuşur.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section section-anchor" id="ai-providers">
+  <div class="container">
+    <h2>Üç YZ sağlayıcı</h2>
+    <p class="lead">Her biri belirli bir güç için seçildi. Üçü de aynı giyilebilir cihazda canlı olabilir; süpervizör Giyilebilir Ayarlar bölmesinden aralarında geçiş yapar.</p>
+
+    <div class="grid cols-3" style="margin-top: 2rem;">
+      <div class="card">
+        <div class="kicker">Varsayılan · B4 / B5 / SOS</div>
+        <h3>Google Gemini Live</h3>
+        <p><strong>Modeller:</strong> <code>gemini-3.1-flash-live-preview</code> (ses + görüntü akışı) ve <code>gemini-2.5-flash</code> (metin fallback).</p>
+        <p><strong>Neden:</strong> çok modlu yerel (ses + görüntü + metin tek akışta), üçü arasında en hızlı ilk-token gecikmesi, dakika başına en düşük maliyet.</p>
+      </div>
+      <div class="card">
+        <div class="kicker">Geçiş · B4 / B5</div>
+        <h3>OpenAI Realtime</h3>
+        <p><strong>Model:</strong> <code>gpt-realtime-2</code>. SOS yolu <code>medium</code> reasoning effort ile <code>"marin"</code> sesini kullanır.</p>
+        <p><strong>Neden:</strong> sıkı yazılmış personalar için daha güvenilir talimat takibi. Yüksek riskli akışlarda en iyi "varlık" algısı. Modelin doğal yavaş temposunu telafi etmek için varsayılan olarak 1.2× çıkış hızı.</p>
+      </div>
+      <div class="card">
+        <div class="kicker">Sohbet botu · bu site</div>
+        <h3>Gemini 3.5 Flash</h3>
+        <p><strong>Model:</strong> <code>google/gemini-3.5-flash</code> (yayın: 2026-05-19).</p>
+        <p><strong>Neden:</strong> en yeni Flash sınıfı model — ajan ve kodlama benchmarklarında 3.1 Pro'dan 4× daha hızlı, 1 M tokenlık girişlerde $1.50 / $9 fiyatlandırma. Bu sayfanın sağ altındaki sohbet baloncuğunu OpenRouter üzerinden çalıştırır.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section section-anchor" id="tools">
+  <div class="container">
+    <h2>Altı YZ aracı</h2>
+    <p class="lead">Hem Gemini hem OpenAI oturumları aynı altı aracı, paylaşılan <code>TOOL_DECLS</code> ve <code>TOOL_HANDLERS</code> kayıt defteri üzerinden açar. Araçlar olmadan YZ yalnızca konuşabilir; onlarla, <em>yapabilir</em>.</p>
+
+    <div class="table-wrap" style="margin-top: 1.4rem;">
+      <table>
+        <thead><tr><th>#</th><th>Araç</th><th>Ne yapar</th><th>Tablolar</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td><code>lookup_component(query)</code></td><td><code>components</code>'i parça kodu (tam) ve sonra ad (bulanık) ile ara. Tork, bakım aralığı, güvenlik notları ile en fazla 3 satır döner.</td><td>Okuma</td></tr>
+          <tr><td>2</td><td><code>log_incident(description, category?, severity?, location?)</code></td><td><code>incidents</code>'a ekle. Kategoriler: safety / equipment / leak / damage / other. Önem: low / medium / high / critical.</td><td>Yazma</td></tr>
+          <tr><td>3</td><td><code>mark_task_complete(task_query)</code></td><td>Başlık parçasıyla bekleyen görevleri bulanık eşle → tamamlandı işaretle. Birden fazla eşleşirse seçeneklerle <code>ambiguous=true</code> döner.</td><td>Yazma</td></tr>
+          <tr><td>4</td><td><code>get_my_assignments(include_complete?)</code></td><td>İşçinin görevlerini öncelik ve son tarih sırasıyla listele.</td><td>Okuma</td></tr>
+          <tr><td>5</td><td><code>request_part(part_query, quantity?, urgency?, reason?)</code></td><td><code>part_requests</code>'a gönder. Aciliyetler: normal / urgent / critical. Bilinen kodlar için <code>components</code> ile otomatik eşler.</td><td>Yazma</td></tr>
+          <tr><td>6</td><td><code>send_report(report_name, recipient_role?, recipient_name?, recipient_email?, custom_message?)</code></td><td>Yöneticiyi + şablonu bul → canlı veri enjekte et → Gmail SMTP (varsayılan) veya Resend ile gönder → <code>sent_reports</code>'a denetim kaydı.</td><td>O + Y + e-posta</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout">
+      <strong>Sistem isteminde üç mutlak kural</strong> en sık görülen başarısızlık modellerini engeller:<br/>
+      <strong>1.</strong> Eylem tamamlandığını yalan söyleme — onay için dispatcher'ın gerçek satır ID'sini taşıyan <code>function_call_output</code> echo'su gerekir.<br/>
+      <strong>2.</strong> Fiil tetikleyiciler — işçinin konuşmasındaki <em>kaydet, işaretle, gönder, talep et</em> eşleşen aracı anında ateşler.<br/>
+      <strong>3.</strong> YZ en fazla bir açıklayıcı soru sorabilir; aksi takdirde makul varsayılanlarla işlem yapar.
+    </div>
+  </div>
+</section>
+
+<section class="section section-anchor" id="database">
+  <div class="container">
+    <h2>Veritabanı</h2>
+    <p class="lead">On bir Supabase tablosu, üç depolama kovası, bir realtime yayını. Demo için RLS kapalı; üretim dağıtımı politikalarla tekrar açar.</p>
+
+    <div class="table-wrap" style="margin-top: 1.4rem;">
+      <table>
+        <thead><tr><th>Grup</th><th>Tablolar</th></tr></thead>
+        <tbody>
+          <tr><td>Operasyonlar</td><td><code>components</code>, <code>worker_tasks</code>, <code>incidents</code>, <code>part_requests</code></td></tr>
+          <tr><td>İletişim</td><td><code>managers</code>, <code>report_templates</code>, <code>sent_reports</code></td></tr>
+          <tr><td>Dokümantasyon</td><td><code>sessions</code>, <code>session_assets</code></td></tr>
+          <tr><td>Güvenlik + Yapılandırma</td><td><code>sos_events</code>, <code>wearable_settings</code> (singleton)</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="section section-anchor" id="dashboard">
+  <div class="container">
+    <h2>Operasyon Paneli</h2>
+    <p class="lead">Next.js 16 + React 19 + Tailwind 4. İki sayfa, on bir gerçek zamanlı bölme. Yeni satırlar, yazıldıktan ~200 ms sonra arayüzde belirir.</p>
+
+    <div class="grid cols-2" style="margin-top: 1.4rem;">
+      <div class="card">
+        <h3>/ — Komuta Merkezi</h3>
+        <ul style="color:#cbd5e1; padding-left:1.2rem;">
+          <li><strong>SosPanel</strong> — canlı SOS alarmı + süpervizör kapatma</li>
+          <li><strong>WearableSettingsPanel</strong> — uzak yapılandırma (sağlayıcı, görüntü modu, SOS ayarları)</li>
+          <li><strong>IncidentsPanel</strong> — güvenlik + ekipman kayıtları</li>
+          <li><strong>TasksPanel</strong> — işçi görev atamaları</li>
+          <li><strong>PartsPanel</strong> — parça talepleri</li>
+          <li><strong>ComponentsPanel</strong> — fabrika parça kataloğu</li>
+          <li><strong>ManagersPanel</strong> — süpervizör dizini</li>
+          <li><strong>ReportTemplatesPanel</strong> — e-posta şablonları</li>
+          <li><strong>SentReportsPanel</strong> — e-posta denetim izi</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>/documentation</h3>
+        <ul style="color:#cbd5e1; padding-left:1.2rem;">
+          <li><strong>İstatistik çubuğu</strong> — toplam / açık oturumlar, fotoğraflar, videolar, sesli notlar, yetimler</li>
+          <li><strong>SessionsPanel</strong> — başlangıç/bitiş, süre, tür başına varlık sayılarıyla vardiyalar. Bir satıra tıklayarak o oturumdaki her yakalamayı görebilirsiniz.</li>
+          <li><strong>CapturesPanel</strong> — sekmeli ızgara (Tümü · Fotoğraflar · Videolar · Sesli notlar · Yetimler). Fotoğraflar modal önizlemede açılır. Videolar yerel <code>&lt;video&gt;</code> kontrolleri. Sesli notlar yerel <code>&lt;audio&gt;</code>.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section section-anchor" id="latency">
+  <div class="container">
+    <h2>Performans</h2>
+    <p class="lead">Türk Telekom 100 Mbit fiber üzerinde (AWS eu-central-1'e ~12 ms RTT) metrik başına 20+ deneme ile ölçüldü.</p>
+
+    <div class="table-wrap" style="margin-top: 1.4rem;">
+      <table>
+        <thead><tr><th>Yol</th><th>Ortalama</th></tr></thead>
+        <tbody>
+          <tr><td>Buton basışı → işleyici çağrısı</td><td>35 ms</td></tr>
+          <tr><td>YZ isteği → ilk ses tokeni (Gemini Live)</td><td>0.9 s</td></tr>
+          <tr><td>YZ isteği → ilk ses tokeni (OpenAI Realtime)</td><td>0.7 s</td></tr>
+          <tr><td>Tek araç gidiş-dönüş (örn. <code>lookup_component</code>)</td><td>180 ms</td></tr>
+          <tr><td>Fotoğraf yakalama → Supabase URL hazır</td><td>1.4 s</td></tr>
+          <tr><td>5 s video kayıt → depolamada MP4</td><td>8.6 s</td></tr>
+          <tr><td>SOS tetik → gelen kutusunda e-posta</td><td>4.2 s</td></tr>
+          <tr><td>Süpervizör kapat → giyilebilir yıkım</td><td>1.8 s</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p style="margin-top: 1.4rem;">6 saatlik bir dayanıklılık testi 1 184 buton olayı kaydetti — %0.93 yanlış sınıflandırma, %1.7 ilk-deneme yükleme başarısızlığı (hepsi yeniden denemeyle düzeldi) ve %100 temiz YZ oturum kapanışı (38 / 38).</p>
+  </div>
+</section>
+
+<script src="assets/chatbot.js"></script>
+<script src="assets/nav.js"></script>
+<script>document.addEventListener('DOMContentLoaded', () => window.VL.mount({ active: 'software', lang: 'tr' }));</script>
+</body>
+</html>

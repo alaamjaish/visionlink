@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VisionLink — A wearable industrial assistant</title>
+  <meta name="description" content="A wearable industrial assistant on Raspberry Pi 4B. Six physical buttons, real-time AI voice + vision, a live supervisor dashboard." />
+  <link rel="icon" type="image/svg+xml" href="../assets/logo.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../assets/styles.css" />
+</head>
+<body>
+
+<!-- =========================== HERO =========================== -->
+<header class="hero">
+  <div class="container hero-inner">
+    <span class="eyebrow">EEE492 · Gazi University · Spring 2026</span>
+    <h1>Press a button.<br/><span class="accent">Talk to your factory.</span></h1>
+    <p class="hero-tagline">
+      VisionLink lives on the worker — a wearable with six buttons, a camera, and a microphone.
+      Press one, speak, and the AI actually does the thing: logs the incident, sends the email,
+      requests the part. No app to open. No screen to tap. The gloves stay on.
+    </p>
+
+    <div class="btn-row">
+      <a href="how-to-use" class="btn btn-primary">How to use it →</a>
+      <a href="the-six-buttons" class="btn btn-ghost">See the buttons</a>
+    </div>
+
+    <div class="hero-stats">
+      <div class="hero-stat"><div class="num">6</div><div class="lbl">Buttons</div></div>
+      <div class="hero-stat"><div class="num">3</div><div class="lbl">AI providers</div></div>
+      <div class="hero-stat"><div class="num">11</div><div class="lbl">Live panels</div></div>
+      <div class="hero-stat"><div class="num">&lt;2.5s</div><div class="lbl">Voice → AI</div></div>
+    </div>
+  </div>
+</header>
+
+<!-- =========================== PROBLEM =========================== -->
+<section class="section band section-anchor" id="problem">
+  <div class="container">
+    <div class="section-head">
+      <span class="eyebrow">The problem</span>
+      <h2>The factory floor in 2026 still runs on memory and paper.</h2>
+      <p class="lead">Three failure modes keep happening, every shift, in every facility we asked about.</p>
+    </div>
+
+    <div class="problem-list">
+      <div class="problem-item">
+        <span class="pn">01</span>
+        <h3>Knowledge walks out the door.</h3>
+        <p>When a senior technician retires, their procedural know-how leaves with them. The next worker has to relearn it from scratch.</p>
+      </div>
+      <div class="problem-item">
+        <span class="pn">02</span>
+        <h3>Emergencies are slow and confused.</h3>
+        <p>An injured worker can't unlock a phone or open an app. Help arrives later than it should, with worse information than it should.</p>
+      </div>
+      <div class="problem-item">
+        <span class="pn">03</span>
+        <h3>Reporting never reaches anyone.</h3>
+        <p>Incidents and parts requests get scribbled on paper or skipped entirely. The analytics layer never sees the floor.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =========================== PITCH (split visual) =========================== -->
+<section class="section section-anchor" id="pitch">
+  <div class="container">
+    <div class="split">
+      <div class="text">
+        <span class="eyebrow">What it is</span>
+        <h2>One device on the worker.<br/>One screen for the supervisor.<br/>Six buttons in between.</h2>
+        <p class="lead">
+          A Raspberry Pi 4B in a 3D-printed shell. A Pi Camera 3. An I²S microphone, an I²S amplifier,
+          a 1 W speaker, and six tactile push buttons. A 10 000 mAh power bank.
+        </p>
+        <p style="margin-top: 1rem; color: var(--text-mute);">
+          When the worker presses a button, the Pi opens a streaming session with Google Gemini or OpenAI Realtime,
+          calls the matching tool, writes to Postgres, sends an email, captures a frame — whatever the gesture
+          asked for. The supervisor sees it appear on their dashboard in under a quarter-second.
+        </p>
+
+        <div class="btn-row" style="margin-top: 2rem;">
+          <a href="hardware" class="btn btn-ghost">Hardware →</a>
+          <a href="software-and-ai" class="btn btn-ghost">Software &amp; AI →</a>
+        </div>
+      </div>
+
+      <div class="visual">
+        <div class="rings">
+          <div class="ring r1"></div>
+          <div class="ring r2"></div>
+          <div class="ring r3"></div>
+          <div class="ring r4"></div>
+          <div class="core"></div>
+          <div class="tick" style="--a:   0deg; --r: -45%;"></div>
+          <div class="tick" style="--a:  60deg; --r: -45%;"></div>
+          <div class="tick" style="--a: 120deg; --r: -45%;"></div>
+          <div class="tick" style="--a: 180deg; --r: -45%;"></div>
+          <div class="tick" style="--a: 240deg; --r: -45%;"></div>
+          <div class="tick" style="--a: 300deg; --r: -45%;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =========================== SIX BUTTONS =========================== -->
+<section class="section band section-anchor" id="buttons">
+  <div class="container">
+    <div class="section-head">
+      <span class="eyebrow">The interface</span>
+      <h2>Six buttons. Two modes. One device.</h2>
+      <p class="lead">Three handle documentation. Two run the AI agent. One is dedicated to emergencies. Every press is a falling-edge GPIO interrupt that dispatches to one async handler.</p>
+    </div>
+
+    <div class="grid cols-3">
+      <div class="button-card">
+        <div class="btn-num">B1 · GPIO 23</div>
+        <div class="btn-name">Documentation Session</div>
+        <div class="btn-desc">Open a shift session in Supabase. Everything captured while it's open is grouped under the same session_id.</div>
+        <div class="gesture-row">
+          <span class="gesture-tag">Single — open</span>
+          <span class="gesture-tag">Single again — close</span>
+        </div>
+      </div>
+
+      <div class="button-card">
+        <div class="btn-num">B2 · GPIO 25</div>
+        <div class="btn-name">Photo / Video</div>
+        <div class="btn-desc">Single press snaps a 1280×720 JPEG. Double press records a 5-second MP4. Both upload to storage and appear on the dashboard.</div>
+        <div class="gesture-row">
+          <span class="gesture-tag">Single — photo</span>
+          <span class="gesture-tag">Double — 5s video</span>
+        </div>
+      </div>
+
+      <div class="button-card">
+        <div class="btn-num">B3 · GPIO 22</div>
+        <div class="btn-name">Voice Note</div>
+        <div class="btn-desc">Press to record, press again to upload. PCM 16 kHz from the I²S mic, wrapped in a WAV header.</div>
+        <div class="gesture-row">
+          <span class="gesture-tag">Press → record</span>
+          <span class="gesture-tag">Press → upload</span>
+        </div>
+      </div>
+
+      <div class="button-card">
+        <div class="btn-num">B4 · GPIO 5</div>
+        <div class="btn-name">AI Voice Agent</div>
+        <div class="btn-desc">A bidirectional voice session with Gemini Live or OpenAI Realtime. The AI hears, replies, and calls six live tools.</div>
+        <div class="gesture-row">
+          <span class="gesture-tag">Single — start</span>
+          <span class="gesture-tag">Double — stop</span>
+        </div>
+      </div>
+
+      <div class="button-card">
+        <div class="btn-num">B5 · GPIO 6</div>
+        <div class="btn-name">AI Voice + Vision</div>
+        <div class="btn-desc">Same as B4, with the camera attached. Each press injects a fresh JPEG into the conversation — the AI sees what the worker sees.</div>
+        <div class="gesture-row">
+          <span class="gesture-tag">Single — start / snap</span>
+          <span class="gesture-tag">Double — stop</span>
+        </div>
+      </div>
+
+      <div class="button-card" style="border-color: rgba(248,113,113,0.32);">
+        <div class="btn-num" style="color:#f87171;">B6 · GPIO 13 · SOS</div>
+        <div class="btn-name">Panic Mode</div>
+        <div class="btn-desc">Double-press arms an SOS. Emails the safety officer, opens a calm AI conversation, auto-snaps a frame every 10 s, supervisor can shut off in ~2 s.</div>
+        <div class="gesture-row">
+          <span class="gesture-tag gold">Single — warning</span>
+          <span class="gesture-tag red">Double — armed</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top: 2.6rem; text-align: center;">
+      <a href="the-six-buttons" class="btn btn-primary">Read the deep dive →</a>
+    </div>
+  </div>
+</section>
+
+<!-- =========================== SUPERVISOR =========================== -->
+<section class="section section-anchor" id="supervisor">
+  <div class="container">
+    <div class="section-head">
+      <span class="eyebrow">The other half</span>
+      <h2>While the worker presses, the supervisor sees.</h2>
+      <p class="lead">Eleven realtime panels on a Next.js 16 dashboard. Every incident, every capture, every email — pushed over Supabase Realtime in ~200 ms. The SOS panel turns red the moment B6 fires.</p>
+    </div>
+
+    <div class="grid cols-2" style="margin-top: 2.6rem;">
+      <div class="card">
+        <div class="kicker">/ Command Center</div>
+        <h3>Nine live panels.</h3>
+        <p style="color:var(--text-mute);">SOS · Wearable Settings · Incidents · Tasks · Parts · Components · Managers · Report Templates · Sent Reports. Full CRUD with optimistic updates and a 1.4 s flash-in animation on every change.</p>
+      </div>
+      <div class="card">
+        <div class="kicker">/documentation</div>
+        <h3>Every shift, captured.</h3>
+        <p style="color:var(--text-mute);">A stats strip on top. Sessions panel below. Captures grid tabbed by kind — All, Photos, Videos, Voice notes, Orphans. Click any row to expand.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =========================== NUMBERS =========================== -->
+<section class="section band section-anchor" id="numbers">
+  <div class="container">
+    <div class="section-head">
+      <span class="eyebrow">By the numbers</span>
+      <h2>What the soak test says.</h2>
+      <p class="lead">A 6-hour automated run across all six buttons, with synthetic load and real Supabase + AI traffic.</p>
+    </div>
+
+    <div class="big-stats">
+      <div class="big-stat"><div class="v">1 184</div><div class="l">button events logged</div></div>
+      <div class="big-stat"><div class="v">0.93 %</div><div class="l">misclassification rate</div></div>
+      <div class="big-stat"><div class="v">38 / 38</div><div class="l">clean AI session closes</div></div>
+      <div class="big-stat"><div class="v">1.8 s</div><div class="l">SOS supervisor shutoff</div></div>
+    </div>
+
+    <div class="big-stats" style="margin-top: 1.6rem;">
+      <div class="big-stat"><div class="v">0.9 s</div><div class="l">Gemini first audio token</div></div>
+      <div class="big-stat"><div class="v">180 ms</div><div class="l">tool round-trip</div></div>
+      <div class="big-stat"><div class="v">1.4 s</div><div class="l">photo → dashboard</div></div>
+      <div class="big-stat"><div class="v">~€110</div><div class="l">prototype BOM</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- =========================== TEAM =========================== -->
+<section class="section section-anchor" id="team">
+  <div class="container">
+    <div class="section-head">
+      <span class="eyebrow">The team</span>
+      <h2>Four people. Four months. One device.</h2>
+      <p class="lead">VisionLink is the EEE492 graduation project of four students at Gazi University, Faculty of Engineering — Spring 2026.</p>
+    </div>
+
+    <div class="team-strip">
+      <div class="team-tile"><div class="nm">Alaa Abo Jeesh</div><div class="rl">Software</div></div>
+      <div class="team-tile"><div class="nm">Ali Salih Yıldırım</div><div class="rl">Software</div></div>
+      <div class="team-tile"><div class="nm">Alaa Ali</div><div class="rl">Hardware + Testing</div></div>
+      <div class="team-tile"><div class="nm">Fatma Defne Dolaz</div><div class="rl">Hardware + Testing</div></div>
+    </div>
+
+    <div style="margin-top: 2rem; text-align: center;">
+      <a href="team" class="btn btn-ghost">Read more about the team →</a>
+    </div>
+  </div>
+</section>
+
+<!-- =========================== CTA =========================== -->
+<section class="section tight">
+  <div class="container">
+    <div class="card" style="text-align:center; padding: 3.2rem 2rem; background: linear-gradient(160deg, rgba(56, 189, 248, 0.08) 0%, rgba(15, 26, 46, 0.95) 100%);">
+      <span class="pill">Got questions?</span>
+      <h2 style="margin-top: 0.6em; font-size: clamp(1.8rem, 3.2vw, 2.4rem);">Ask the VisionLink assistant.</h2>
+      <p class="lead" style="margin: 0 auto;">
+        We loaded a Gemini 3.5 Flash chatbot with the full project — hardware, software, AI, the six buttons,
+        the dashboards, even the soak-test numbers. Hit the chat bubble at the bottom-right.
+      </p>
+    </div>
+  </div>
+</section>
+
+<script src="../assets/chatbot.js"></script>
+<script src="../assets/nav.js"></script>
+<script>document.addEventListener('DOMContentLoaded', () => window.VL.mount({ active: 'home' }));</script>
+</body>
+</html>

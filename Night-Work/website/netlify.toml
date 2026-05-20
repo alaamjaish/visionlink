@@ -1,0 +1,28 @@
+# Netlify config for the VisionLink site
+
+[build]
+  publish = "."
+  functions = "netlify/functions"
+
+[functions]
+  # Use Node 20 runtime (has built-in fetch)
+  node_bundler = "esbuild"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "SAMEORIGIN"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+[[redirects]]
+  from = "/api/chat"
+  to = "/.netlify/functions/chat"
+  status = 200
+
+# Old /tr/* URLs (from before Turkish became the default) redirect to root
+[[redirects]]
+  from = "/tr/*"
+  to = "/:splat"
+  status = 301
+  force = true

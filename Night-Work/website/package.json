@@ -1,0 +1,18 @@
+{
+  "name": "visionlink-site",
+  "version": "1.0.0",
+  "private": true,
+  "description": "VisionLink graduation-project marketing site + Gemini 3.5 Flash chatbot (Netlify Function).",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "netlify dev",
+    "deploy:preview": "netlify deploy --dir=.",
+    "deploy": "netlify deploy --prod --dir=. --message=\"VisionLink site update\"",
+    "open": "netlify open:site",
+    "logs": "netlify logs:function chat",
+    "env:set-key": "netlify env:set OPENROUTER_API_KEY",
+    "env:list": "netlify env:list"
+  }
+}

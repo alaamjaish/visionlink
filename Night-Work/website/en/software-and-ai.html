@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Software &amp; AI — VisionLink</title>
+  <meta name="description" content="The software stack, AI providers, and tool-calling layer behind VisionLink." />
+  <link rel="icon" type="image/svg+xml" href="../assets/logo.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../assets/styles.css" />
+</head>
+<body>
+
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">The brains</span>
+    <h1>Software &amp; AI</h1>
+    <p class="lead">Three independent processes on the Pi, three cloud AI providers, a six-tool function-calling layer, and eleven realtime dashboard panels.</p>
+  </div>
+</section>
+
+<section class="section section-anchor" id="stack">
+  <div class="container">
+    <h2>The stack</h2>
+    <div class="table-wrap" style="margin-top: 1.4rem;">
+      <table>
+        <thead><tr><th>Layer</th><th>Technology</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td>HTTP / WebSocket server</td><td><strong>FastAPI</strong> + Uvicorn</td><td>Async-first Python, automatic OpenAPI docs, perfect for real-time event handling</td></tr>
+          <tr><td>Supervisor UI</td><td><strong>Next.js 16</strong> + React 19 + Tailwind 4</td><td>App-router, server components, Turbopack — modern fast dev experience</td></tr>
+          <tr><td>Cloud database</td><td><strong>Supabase</strong> (Postgres + Storage + Realtime)</td><td>Managed Postgres with realtime push, S3-compatible storage, official Python &amp; JS SDKs</td></tr>
+          <tr><td>GPIO</td><td>RPi.GPIO + lgpio + gpiozero</td><td>Standard Pi GPIO with falling-edge interrupts and debounce</td></tr>
+          <tr><td>Camera</td><td><strong>picamera2</strong></td><td>Modern Pi Camera library with hardware MMAL acceleration</td></tr>
+          <tr><td>Audio capture / playback</td><td>sounddevice + custom <code>AudioBridge</code></td><td>Direct I²S device access, low-latency mic feed, half-duplex muting during TTS</td></tr>
+          <tr><td>Voice AI</td><td><strong>google-genai</strong> SDK (Gemini Live) and <strong>OpenAI</strong> SDK (Realtime)</td><td>Bidirectional streaming voice + vision over WebSocket</td></tr>
+          <tr><td>Email</td><td><strong>smtplib</strong> (Gmail) + <strong>resend</strong> (alternative)</td><td>Two providers; Gmail is the default</td></tr>
+          <tr><td>QR codes</td><td>pyzbar</td><td>Pi Camera frame → QR string decode</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="section section-anchor" id="processes">
+  <div class="container">
+    <h2>Three processes on the Pi</h2>
+    <p class="lead">Independent processes give isolation: a crash in one cannot kill the others. <code>audio_worker</code> is a subprocess of FastAPI, so a C-level ALSA assertion crashes only the worker — the parent restarts it within 1.5 s.</p>
+
+    <div class="grid cols-3" style="margin-top: 2rem;">
+      <div class="card">
+        <div class="kicker">Process 1</div>
+        <h3>GPIO Bridge</h3>
+        <p><code>scripts/gpio_bridge.py</code></p>
+        <p>Owns the six GPIO pins. Classifies each gesture as <code>single</code>, <code>double</code>, <code>hold_start</code>, or <code>hold_end</code>, and POSTs to <code>/api/button/&lt;n&gt;/&lt;event&gt;</code>.</p>
+      </div>
+      <div class="card">
+        <div class="kicker">Process 2</div>
+        <h3>FastAPI Dashboard</h3>
+        <p><code>dashboard/server.py</code> · port 8000</p>
+        <p>Voice command center, WebSocket transcript, camera lock manager, hosts the <code>audio_worker</code> subprocess. ~1 800 lines.</p>
+      </div>
+      <div class="card">
+        <div class="kicker">Process 3</div>
+        <h3>Ops Dashboard</h3>
+        <p><code>ops/</code> · port 3000</p>
+        <p>Next.js 16 + React 19. Speaks directly to Supabase via <code>@supabase/supabase-js</code> for realtime panels and CRUD.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section section-anchor" id="ai-providers">
+  <div class="container">
+    <h2>Three AI providers</h2>
+    <p class="lead">Each picked for a specific strength. All three can be live in the same wearable; the supervisor switches between them from the Wearable Settings panel.</p>
+
+    <div class="grid cols-3" style="margin-top: 2rem;">
+      <div class="card">
+        <div class="kicker">Default · B4 / B5 / SOS</div>
+        <h3>Google Gemini Live</h3>
+        <p><strong>Models:</strong> <code>gemini-3.1-flash-live-preview</code> (voice + vision streaming) and <code>gemini-2.5-flash</code> (text fallback).</p>
+        <p><strong>Why:</strong> multimodal native (audio + image + text in one stream), fastest first-token latency among the three, lowest cost per minute.</p>
+      </div>
+      <div class="card">
+        <div class="kicker">Override · B4 / B5</div>
+        <h3>OpenAI Realtime</h3>
+        <p><strong>Model:</strong> <code>gpt-realtime-2</code>. SOS path uses voice <code>"marin"</code> with reasoning effort <code>medium</code>.</p>
+        <p><strong>Why:</strong> stricter instruction-following for tightly-scripted personas. Best perceived "presence" on high-stakes flows. Output speed 1.2× by default to combat the model's natural pacing.</p>
+      </div>
+      <div class="card">
+        <div class="kicker">Chatbot · this site</div>
+        <h3>Gemini 3.5 Flash</h3>
+        <p><strong>Model:</strong> <code>gemini-3.5-flash</code> (released 2026-05-19).</p>
+        <p><strong>Why:</strong> the newest Flash-tier model — 4× faster than 3.1 Pro on agent and coding benchmarks, $1.50 / $9 per 1 M tokens. Powers the chat bubble at the bottom-right of this page.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section section-anchor" id="tools">
+  <div class="container">
+    <h2>The six AI tools</h2>
+    <p class="lead">Both Gemini and OpenAI sessions expose the same six tools via a shared <code>TOOL_DECLS</code> and <code>TOOL_HANDLERS</code> registry. Without tools the AI could only talk; with them, it can <em>do</em>.</p>
+
+    <div class="table-wrap" style="margin-top: 1.4rem;">
+      <table>
+        <thead><tr><th>#</th><th>Tool</th><th>What it does</th><th>Tables</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td><code>lookup_component(query)</code></td><td>Search <code>components</code> by part code (exact) then name (fuzzy). Returns up to 3 rows with torque spec, maintenance interval, safety notes.</td><td>Read</td></tr>
+          <tr><td>2</td><td><code>log_incident(description, category?, severity?, location?)</code></td><td>Insert into <code>incidents</code>. Categories: safety / equipment / leak / damage / other. Severities: low / medium / high / critical.</td><td>Write</td></tr>
+          <tr><td>3</td><td><code>mark_task_complete(task_query)</code></td><td>Fuzzy-match a pending task by title fragment → mark complete. Returns <code>ambiguous=true</code> with options when multiple match.</td><td>Write</td></tr>
+          <tr><td>4</td><td><code>get_my_assignments(include_complete?)</code></td><td>List the worker's tasks, ordered by priority then due date.</td><td>Read</td></tr>
+          <tr><td>5</td><td><code>request_part(part_query, quantity?, urgency?, reason?)</code></td><td>Submit to <code>part_requests</code>. Urgencies: normal / urgent / critical. Auto-matches against <code>components</code> for known codes.</td><td>Write</td></tr>
+          <tr><td>6</td><td><code>send_report(report_name, recipient_role?, recipient_name?, recipient_email?, custom_message?)</code></td><td>Look up manager + template → inject live data → send via Gmail SMTP (default) or Resend → audit-log to <code>sent_reports</code>.</td><td>R + W + email</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout">
+      <strong>Three absolute rules</strong> in the system prompt prevent the most common failure modes:<br/>
+      <strong>1.</strong> Never lie about completing actions — confirmation requires the dispatcher's <code>function_call_output</code> echo carrying the actual row ID.<br/>
+      <strong>2.</strong> Verb triggers — <em>log, mark, send, request</em> in the worker's speech fire the matching tool immediately.<br/>
+      <strong>3.</strong> The AI may ask at most one clarifying question, otherwise commits with reasonable defaults.
+    </div>
+  </div>
+</section>
+
+<section class="section section-anchor" id="database">
+  <div class="container">
+    <h2>The database</h2>
+    <p class="lead">Eleven Supabase tables, three storage buckets, one realtime publication. RLS is disabled for the demo; production deployment re-enables it with policies.</p>
+
+    <div class="table-wrap" style="margin-top: 1.4rem;">
+      <table>
+        <thead><tr><th>Group</th><th>Tables</th></tr></thead>
+        <tbody>
+          <tr><td>Operations</td><td><code>components</code>, <code>worker_tasks</code>, <code>incidents</code>, <code>part_requests</code></td></tr>
+          <tr><td>Communications</td><td><code>managers</code>, <code>report_templates</code>, <code>sent_reports</code></td></tr>
+          <tr><td>Documentation</td><td><code>sessions</code>, <code>session_assets</code></td></tr>
+          <tr><td>Safety + Config</td><td><code>sos_events</code>, <code>wearable_settings</code> (singleton)</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="section section-anchor" id="dashboard">
+  <div class="container">
+    <h2>The Ops Dashboard</h2>
+    <p class="lead">Next.js 16 + React 19 + Tailwind 4. Two pages, eleven realtime panels. New rows appear in the UI within ~200 ms of being written.</p>
+
+    <div class="grid cols-2" style="margin-top: 1.4rem;">
+      <div class="card">
+        <h3>/ — Command Center</h3>
+        <ul style="color:#cbd5e1; padding-left:1.2rem;">
+          <li><strong>SosPanel</strong> — live SOS alarm + supervisor shutdown</li>
+          <li><strong>WearableSettingsPanel</strong> — remote config (provider, vision mode, SOS tunables)</li>
+          <li><strong>IncidentsPanel</strong> — safety + equipment logs</li>
+          <li><strong>TasksPanel</strong> — worker task assignments</li>
+          <li><strong>PartsPanel</strong> — part requests</li>
+          <li><strong>ComponentsPanel</strong> — factory parts catalog</li>
+          <li><strong>ManagersPanel</strong> — supervisor directory</li>
+          <li><strong>ReportTemplatesPanel</strong> — email templates</li>
+          <li><strong>SentReportsPanel</strong> — email audit trail</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>/documentation</h3>
+        <ul style="color:#cbd5e1; padding-left:1.2rem;">
+          <li><strong>Stats strip</strong> — total / open sessions, photos, videos, voice notes, orphans</li>
+          <li><strong>SessionsPanel</strong> — list of shifts with start/end, duration, per-kind asset counts. Click a row to expand and see every capture in that session.</li>
+          <li><strong>CapturesPanel</strong> — tabbed grid (All · Photos · Videos · Voice notes · Orphans). Photos open in a modal preview. Videos use native <code>&lt;video&gt;</code> controls. Voice notes use native <code>&lt;audio&gt;</code>.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section section-anchor" id="latency">
+  <div class="container">
+    <h2>Performance</h2>
+    <p class="lead">Measured over 20+ trials per metric on Türk Telekom 100 Mbit fibre (~12 ms RTT to AWS eu-central-1).</p>
+
+    <div class="table-wrap" style="margin-top: 1.4rem;">
+      <table>
+        <thead><tr><th>Path</th><th>Mean</th></tr></thead>
+        <tbody>
+          <tr><td>Button press → handler invocation</td><td>35 ms</td></tr>
+          <tr><td>AI request → first audio token (Gemini Live)</td><td>0.9 s</td></tr>
+          <tr><td>AI request → first audio token (OpenAI Realtime)</td><td>0.7 s</td></tr>
+          <tr><td>Single tool round-trip (e.g. <code>lookup_component</code>)</td><td>180 ms</td></tr>
+          <tr><td>Photo capture → Supabase URL ready</td><td>1.4 s</td></tr>
+          <tr><td>5 s video record → MP4 in storage</td><td>8.6 s</td></tr>
+          <tr><td>SOS trigger → email in inbox</td><td>4.2 s</td></tr>
+          <tr><td>Supervisor shutoff flip → wearable teardown</td><td>1.8 s</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p style="margin-top: 1.4rem;">A 6-hour soak test logged 1 184 button events with 0.93 % misclassification, 1.7 % first-try upload failures (all retry-recovered), and 100 % clean AI session close (38 / 38).</p>
+  </div>
+</section>
+
+<script src="../assets/chatbot.js"></script>
+<script src="../assets/nav.js"></script>
+<script>document.addEventListener('DOMContentLoaded', () => window.VL.mount({ active: 'software' }));</script>
+</body>
+</html>

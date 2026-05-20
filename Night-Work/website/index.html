@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VisionLink — Giyilebilir Endüstriyel Asistan</title>
+  <meta name="description" content="Raspberry Pi 4B üzerinde giyilebilir endüstriyel asistan. Altı fiziksel buton, gerçek zamanlı YZ sesi ve görüntüsü, canlı süpervizör paneli." />
+  <link rel="icon" type="image/svg+xml" href="assets/logo.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+
+<!-- =========================== HERO =========================== -->
+<header class="hero">
+  <div class="container hero-inner">
+    <span class="eyebrow">EEE492 · Gazi Üniversitesi · Bahar 2026</span>
+    <h1>Bir butona bas.<br/><span class="accent">Fabrikanla konuş.</span></h1>
+    <p class="hero-tagline">
+      VisionLink işçinin üzerinde yaşar — altı butonu, kamerası ve mikrofonu olan giyilebilir bir cihaz.
+      Bir butona basıyorsun, konuşuyorsun ve yapay zekâ söylediğini gerçekten yapıyor: olayı kaydediyor,
+      e-postayı gönderiyor, parça talebini açıyor. Açılacak uygulama yok. Dokunulacak ekran yok. Eldivenler
+      elinde kalıyor.
+    </p>
+
+    <div class="btn-row">
+      <a href="how-to-use" class="btn btn-primary">Nasıl kullanılır →</a>
+      <a href="the-six-buttons" class="btn btn-ghost">Butonları gör</a>
+    </div>
+
+    <div class="hero-stats">
+      <div class="hero-stat"><div class="num">6</div><div class="lbl">Buton</div></div>
+      <div class="hero-stat"><div class="num">3</div><div class="lbl">YZ sağlayıcısı</div></div>
+      <div class="hero-stat"><div class="num">11</div><div class="lbl">Canlı panel</div></div>
+      <div class="hero-stat"><div class="num">&lt;2.5s</div><div class="lbl">Ses → YZ</div></div>
+    </div>
+  </div>
+</header>
+
+<!-- =========================== PROBLEM =========================== -->
+<section class="section band section-anchor" id="problem">
+  <div class="container">
+    <div class="section-head">
+      <span class="eyebrow">Sorun</span>
+      <h2>2026'da fabrika sahası hâlâ hafıza ve kâğıt üzerinde dönüyor.</h2>
+      <p class="lead">Her vardiyada, her tesiste tekrar tekrar karşımıza çıkan üç başarısızlık modeli var.</p>
+    </div>
+
+    <div class="problem-list">
+      <div class="problem-item">
+        <span class="pn">01</span>
+        <h3>Bilgi kapıdan dışarı çıkıyor.</h3>
+        <p>Kıdemli bir teknisyen emekli olduğunda, bütün prosedürel bilgisi onunla birlikte gidiyor. Bir sonraki işçi her şeyi sıfırdan öğrenmek zorunda kalıyor.</p>
+      </div>
+      <div class="problem-item">
+        <span class="pn">02</span>
+        <h3>Acil durumlar yavaş ve karmaşık.</h3>
+        <p>Yaralanan bir işçi telefon kilidini açıp uygulama kullanamıyor. Yardım gerekenden geç ve eksik bilgiyle ulaşıyor.</p>
+      </div>
+      <div class="problem-item">
+        <span class="pn">03</span>
+        <h3>Raporlar hiçbir yere ulaşmıyor.</h3>
+        <p>Olaylar ve parça talepleri kâğıda karalanıyor ya da hiç yazılmıyor. Analitik katmana sahada olan biten ulaşmıyor.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =========================== PITCH =========================== -->
+<section class="section section-anchor" id="pitch">
+  <div class="container">
+    <div class="split">
+      <div class="text">
+        <span class="eyebrow">VisionLink nedir?</span>
+        <h2>İşçinin üzerinde bir cihaz.<br/>Süpervizör için bir ekran.<br/>Aralarında altı buton.</h2>
+        <p class="lead">
+          3D-baskı bir kasada bir Raspberry Pi 4B. Bir Pi Camera 3. I²S bir mikrofon, I²S bir
+          amplifikatör, 1 W bir hoparlör ve altı taktil buton. 10 000 mAh bir power bank.
+        </p>
+        <p style="margin-top: 1rem; color: var(--text-mute);">
+          İşçi bir butona bastığında Pi, Google Gemini veya OpenAI Realtime ile bir akış oturumu açar,
+          ilgili aracı çağırır, Postgres'e yazar, e-posta gönderir, kare yakalar — hangi hareket
+          istenmişse onu. Süpervizör bunu kendi panelinde çeyrek saniyenin altında görür.
+        </p>
+
+        <div class="btn-row" style="margin-top: 2rem;">
+          <a href="hardware" class="btn btn-ghost">Donanım →</a>
+          <a href="software-and-ai" class="btn btn-ghost">Yazılım & YZ →</a>
+        </div>
+      </div>
+
+      <div class="visual">
+        <div class="rings">
+          <div class="ring r1"></div>
+          <div class="ring r2"></div>
+          <div class="ring r3"></div>
+          <div class="ring r4"></div>
+          <div class="core"></div>
+          <div class="tick" style="--a:   0deg; --r: -45%;"></div>
+          <div class="tick" style="--a:  60deg; --r: -45%;"></div>
+          <div class="tick" style="--a: 120deg; --r: -45%;"></div>
+          <div class="tick" style="--a: 180deg; --r: -45%;"></div>
+          <div class="tick" style="--a: 240deg; --r: -45%;"></div>
+          <div class="tick" style="--a: 300deg; --r: -45%;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =========================== SIX BUTTONS =========================== -->
+<section class="section band section-anchor" id="buttons">
+  <div class="container">
+    <div class="section-head">
+      <span class="eyebrow">Arayüz</span>
+      <h2>Altı buton. İki mod. Tek cihaz.</h2>
+      <p class="lead">Üç tanesi dokümantasyon için. İki tanesi YZ ajanını çalıştırır. Biri yalnızca acil durumlar için. Her basış bir düşen-kenar GPIO kesmesidir; tek bir asenkron işleyiciye dağıtılır.</p>
+    </div>
+
+    <div class="grid cols-3">
+      <div class="button-card">
+        <div class="btn-num">B1 · GPIO 23</div>
+        <div class="btn-name">Dokümantasyon Oturumu</div>
+        <div class="btn-desc">Supabase'de bir vardiya oturumu açar. Oturum açıkken yakalanan her şey aynı session_id altında gruplanır.</div>
+        <div class="gesture-row">
+          <span class="gesture-tag">Tek basış — aç</span>
+          <span class="gesture-tag">Tekrar tek basış — kapat</span>
+        </div>
+      </div>
+
+      <div class="button-card">
+        <div class="btn-num">B2 · GPIO 25</div>
+        <div class="btn-name">Fotoğraf / Video</div>
+        <div class="btn-desc">Tek basış 1280×720 bir JPEG çeker. Çift basış 5 saniyelik bir MP4 kaydeder. İkisi de depolamaya yüklenir ve panelde görünür.</div>
+        <div class="gesture-row">
+          <span class="gesture-tag">Tek — fotoğraf</span>
+          <span class="gesture-tag">Çift — 5s video</span>
+        </div>
+      </div>
+
+      <div class="button-card">
+        <div class="btn-num">B3 · GPIO 22</div>
+        <div class="btn-name">Sesli Not</div>
+        <div class="btn-desc">Basıp kaydet, tekrar basıp yükle. I²S mikrofondan 16 kHz PCM, WAV başlığına sarılıp yüklenir.</div>
+        <div class="gesture-row">
+          <span class="gesture-tag">Bas → kaydet</span>
+          <span class="gesture-tag">Bas → yükle</span>
+        </div>
+      </div>
+
+      <div class="button-card">
+        <div class="btn-num">B4 · GPIO 5</div>
+        <div class="btn-name">YZ Sesli Ajan</div>
+        <div class="btn-desc">Gemini Live veya OpenAI Realtime ile çift yönlü sesli oturum. YZ duyar, cevap verir ve altı canlı aracı çağırır.</div>
+        <div class="gesture-row">
+          <span class="gesture-tag">Tek — başlat</span>
+          <span class="gesture-tag">Çift — durdur</span>
+        </div>
+      </div>
+
+      <div class="button-card">
+        <div class="btn-num">B5 · GPIO 6</div>
+        <div class="btn-name">YZ Ses + Görüntü</div>
+        <div class="btn-desc">B4 ile aynı, ama kamera açık. Her basışta sohbete taze bir JPEG enjekte edilir — YZ işçinin gördüğünü görür.</div>
+        <div class="gesture-row">
+          <span class="gesture-tag">Tek — başlat / kare</span>
+          <span class="gesture-tag">Çift — durdur</span>
+        </div>
+      </div>
+
+      <div class="button-card" style="border-color: rgba(248,113,113,0.32);">
+        <div class="btn-num" style="color:#f87171;">B6 · GPIO 13 · SOS</div>
+        <div class="btn-name">Panik Modu</div>
+        <div class="btn-desc">Çift basış SOS'u tetikler. İş güvenliği sorumlusuna e-posta gönderir, sakin bir YZ oturumu açar, 10 sn'de bir kare yakalar, süpervizör ~2 sn'de kapatabilir.</div>
+        <div class="gesture-row">
+          <span class="gesture-tag gold">Tek — uyarı</span>
+          <span class="gesture-tag red">Çift — aktif</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top: 2.6rem; text-align: center;">
+      <a href="the-six-buttons" class="btn btn-primary">Detayları oku →</a>
+    </div>
+  </div>
+</section>
+
+<!-- =========================== SUPERVISOR =========================== -->
+<section class="section section-anchor" id="supervisor">
+  <div class="container">
+    <div class="section-head">
+      <span class="eyebrow">Diğer yarı</span>
+      <h2>İşçi butonlara basarken süpervizör her şeyi görür.</h2>
+      <p class="lead">Next.js 16 bir panel üzerinde on bir gerçek zamanlı bölme. Her olay, her yakalama, her e-posta — Supabase Realtime üzerinden ~200 ms içinde itilir. B6 tetiklendiği anda SOS bölmesi kırmızıya döner.</p>
+    </div>
+
+    <div class="grid cols-2" style="margin-top: 2.6rem;">
+      <div class="card">
+        <div class="kicker">/ Komuta Merkezi</div>
+        <h3>Dokuz canlı bölme.</h3>
+        <p style="color:var(--text-mute);">SOS · Giyilebilir Ayarlar · Olaylar · Görevler · Parçalar · Bileşenler · Yöneticiler · Rapor Şablonları · Gönderilen Raporlar. Her bölme tam CRUD destekli; her değişikte 1.4 sn'lik bir parlatma animasyonu.</p>
+      </div>
+      <div class="card">
+        <div class="kicker">/documentation</div>
+        <h3>Her vardiya kayıt altında.</h3>
+        <p style="color:var(--text-mute);">Üstte bir istatistik çubuğu. Aşağıda Oturumlar bölmesi. Türlere göre sekmeli yakalama ızgarası — Tümü, Fotoğraflar, Videolar, Sesli notlar, Yetimler. Herhangi bir satıra tıklayıp genişletebilirsiniz.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =========================== NUMBERS =========================== -->
+<section class="section band section-anchor" id="numbers">
+  <div class="container">
+    <div class="section-head">
+      <span class="eyebrow">Rakamlarla</span>
+      <h2>Dayanıklılık testi ne diyor?</h2>
+      <p class="lead">Altı butonun hepsi üzerinde, sentetik yük ve gerçek Supabase + YZ trafiği ile 6 saatlik otomatik bir koşu.</p>
+    </div>
+
+    <div class="big-stats">
+      <div class="big-stat"><div class="v">1 184</div><div class="l">kaydedilen buton olayı</div></div>
+      <div class="big-stat"><div class="v">0.93 %</div><div class="l">yanlış sınıflandırma oranı</div></div>
+      <div class="big-stat"><div class="v">38 / 38</div><div class="l">temiz YZ oturum kapanışı</div></div>
+      <div class="big-stat"><div class="v">1.8 s</div><div class="l">SOS süpervizör kapatma</div></div>
+    </div>
+
+    <div class="big-stats" style="margin-top: 1.6rem;">
+      <div class="big-stat"><div class="v">0.9 s</div><div class="l">Gemini ilk ses tokeni</div></div>
+      <div class="big-stat"><div class="v">180 ms</div><div class="l">araç gidiş-dönüş</div></div>
+      <div class="big-stat"><div class="v">1.4 s</div><div class="l">fotoğraf → panel</div></div>
+      <div class="big-stat"><div class="v">~€110</div><div class="l">prototip malzeme listesi</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- =========================== TEAM =========================== -->
+<section class="section section-anchor" id="team">
+  <div class="container">
+    <div class="section-head">
+      <span class="eyebrow">Ekip</span>
+      <h2>Dört kişi. Dört ay. Tek cihaz.</h2>
+      <p class="lead">VisionLink, Gazi Üniversitesi Mühendislik Fakültesi'nde dört öğrencinin EEE492 mezuniyet projesidir — Bahar 2026.</p>
+    </div>
+
+    <div class="team-strip">
+      <div class="team-tile"><div class="nm">Alaa Abo Jeesh</div><div class="rl">Yazılım</div></div>
+      <div class="team-tile"><div class="nm">Ali Salih Yıldırım</div><div class="rl">Yazılım</div></div>
+      <div class="team-tile"><div class="nm">Alaa Ali</div><div class="rl">Donanım + Test</div></div>
+      <div class="team-tile"><div class="nm">Fatma Defne Dolaz</div><div class="rl">Donanım + Test</div></div>
+    </div>
+
+    <div style="margin-top: 2rem; text-align: center;">
+      <a href="team" class="btn btn-ghost">Ekip hakkında daha fazla →</a>
+    </div>
+  </div>
+</section>
+
+<!-- =========================== CTA =========================== -->
+<section class="section tight">
+  <div class="container">
+    <div class="card" style="text-align:center; padding: 3.2rem 2rem; background: linear-gradient(160deg, rgba(56, 189, 248, 0.08) 0%, rgba(15, 26, 46, 0.95) 100%);">
+      <span class="pill">Soru mu var?</span>
+      <h2 style="margin-top: 0.6em; font-size: clamp(1.8rem, 3.2vw, 2.4rem);">VisionLink asistanına sor.</h2>
+      <p class="lead" style="margin: 0 auto;">
+        Gemini 3.5 Flash tabanlı bir sohbet botuna projenin tamamını yükledik — donanım, yazılım, YZ,
+        altı buton, paneller, hatta dayanıklılık testi rakamları. Sağ altta yer alan sohbet baloncuğuna bas.
+      </p>
+    </div>
+  </div>
+</section>
+
+<script src="assets/chatbot.js"></script>
+<script src="assets/nav.js"></script>
+<script>document.addEventListener('DOMContentLoaded', () => window.VL.mount({ active: 'home', lang: 'tr' }));</script>
+</body>
+</html>

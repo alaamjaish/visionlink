@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Altı Buton — VisionLink</title>
+  <meta name="description" content="VisionLink'in her butonu — ne yaptığı, hareketleri ve parmağından buluta uzanan yolculuğu." />
+  <link rel="icon" type="image/svg+xml" href="assets/logo.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">Donanım arayüzü</span>
+    <h1>Altı Buton</h1>
+    <p class="lead">İki mod, altı işleyici, üç hareket (tek basış, çift basış, basılı tutma). Her buton bir düşen-kenar GPIO kesmesidir ve asenkron bir Python coroutine'ine dönüşür.</p>
+
+    <div class="toc">
+      <h4>Bu sayfada</h4>
+      <ol>
+        <li><a href="#b1">B1 — Dokümantasyon Oturumu</a></li>
+        <li><a href="#b2">B2 — Fotoğraf / Video</a></li>
+        <li><a href="#b3">B3 — Sesli Not</a></li>
+        <li><a href="#b4">B4 — YZ Sesli Ajan</a></li>
+        <li><a href="#b5">B5 — YZ Ses + Görüntü</a></li>
+        <li><a href="#b6">B6 — SOS Panik Modu</a></li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<!-- B1 -->
+<section class="section section-anchor" id="b1">
+  <div class="container">
+    <span class="pill">B1 · GPIO 23 · Pin 16</span>
+    <h2>Dokümantasyon Oturumu</h2>
+    <p class="lead">Bir vardiya oturumunu açar veya kapatır. Oturum açıkken yakalanan her şey (fotoğraflar, videolar, sesli notlar) aynı <code>session_id</code> altında gruplanır.</p>
+
+    <div class="flow">
+      <h3 style="margin-top:0;">Basışın yolculuğu</h3>
+      <ol>
+        <li>İşçi B1'e basar. GPIO pini 3.3 V'tan 0 V'a düşer.</li>
+        <li>Linux çekirdeği GPIO 23 üzerinde düşen-kenar kesmesi oluşturur.</li>
+        <li><code>scripts/gpio_bridge.py</code> debouncing (~20 ms LOW + 40 ms HIGH) uygular ve FastAPI paneline <code>/api/button/1/single</code> POST eder.</li>
+        <li><code>b1_doc_session_toggle</code> işleyicisi mevcut durumu okur. Açık oturum yoksa yeni bir <code>sessions</code> satırı eklenir. Açık oturum varsa <code>status='closed'</code>, <code>ended_at = now()</code> olarak güncellenir.</li>
+        <li>Supabase'in mantıksal replikasyonu değişikliği Realtime üzerinden iter. Süpervizörün paneli yeni durumu ~200 ms içinde yansıtır.</li>
+      </ol>
+    </div>
+
+    <div class="callout"><strong>Koruma:</strong> 800 ms'lik bir bekleme süresi, mekanik sekmenin oturumu açar açmaz kapatan bir ikinci basış olarak yanlış sınıflandırılmasını engeller.</div>
+  </div>
+</section>
+
+<!-- B2 -->
+<section class="section section-anchor" id="b2">
+  <div class="container">
+    <span class="pill">B2 · GPIO 25 · Pin 22</span>
+    <h2>Fotoğraf / Video</h2>
+    <p class="lead">Tek basış bir JPEG. Çift basış 5 saniyelik bir MP4. Çift basış penceresi 700 ms'dir.</p>
+
+    <div class="grid cols-2" style="margin-top: 1.4rem;">
+      <div class="card">
+        <h3>Fotoğraf yolculuğu</h3>
+        <ol>
+          <li>B2 tek basış → <code>b2_take_photo</code></li>
+          <li><code>picamera2</code> 1280×720, kalite 85 bir JPEG yakalar</li>
+          <li>Baytlar <code>session-assets/&lt;session_id&gt;/photo_&lt;ts&gt;.jpg</code>'ye yüklenir</li>
+          <li><code>session_assets</code> satırı eklenir (<code>kind='photo'</code>)</li>
+          <li>Süpervizör küçük resmi uçtan uca ~3 sn içinde görür</li>
+        </ol>
+      </div>
+      <div class="card">
+        <h3>Video yolculuğu</h3>
+        <ol>
+          <li>B2 çift basış → <code>b2_record_video</code></li>
+          <li><code>rpicam-vid --codec libav --libav-format mp4 -t 5000</code> 5 sn'lik bir MP4 yazar (1280×720 @ 30 fps)</li>
+          <li>MP4 aynı kovaya yüklenir</li>
+          <li><code>session_assets</code> satırı <code>kind='video'</code>, <code>duration_s=5</code></li>
+          <li><code>B2_VIDEO_MAX_DURATION</code> (varsayılan 300 sn) sert üst sınırı kaçak kayıtları önler</li>
+        </ol>
+      </div>
+    </div>
+
+    <div class="callout"><strong>Videoda neden ses yok.</strong> I²S mikrofonu, YZ oturumlarını ve B3 sesli notlarını besleyen sürekli çalışan <code>audio_worker</code> alt süreci tarafından özel olarak tutulur. Paralel bir <code>arecord</code> "device busy" hatasıyla başarısız olur. Mevcut AudioBridge üzerinden ses muxlama planlanan bir iyileştirmedir.</div>
+  </div>
+</section>
+
+<!-- B3 -->
+<section class="section section-anchor" id="b3">
+  <div class="container">
+    <span class="pill">B3 · GPIO 22 · Pin 15</span>
+    <h2>Sesli Not</h2>
+    <p class="lead">Basıp başlat, tekrar basıp durdur. SPH0645 I²S MEMS mikrofondan 16 kHz mono PCM, yüklemede WAV başlığına sarılır.</p>
+
+    <div class="flow">
+      <ol>
+        <li>B3 tek basış → <code>b3_voice_note_start</code></li>
+        <li>İşleyici <code>AudioBridge</code> mikrofon akışına abone olur ve ham PCM'yi belleğe biriktirmeye başlar</li>
+        <li>İşçi doğal şekilde konuşur (örn. <em>"yarın sabah valf B7'yi kontrol et"</em>)</li>
+        <li>B3 tekrar basılır → <code>b3_voice_note_end</code></li>
+        <li>Biriktirilen PCM bir WAV başlığına (16 kHz, 16 bit, mono) sarılır ve <code>session-assets/&lt;session_id&gt;/voice_&lt;ts&gt;.wav</code>'ye yüklenir</li>
+        <li><code>session_assets</code> satırı <code>kind='voice_note'</code> ve hesaplanan <code>duration_s</code> ile eklenir</li>
+        <li>Süpervizör panelde satır içi çalınabilir bir <code>&lt;audio&gt;</code> öğesi görür</li>
+      </ol>
+    </div>
+
+    <div class="callout"><strong>Mikrofon önceliği:</strong> Herhangi bir YZ oturumu (B4, B5 veya B6) mikrofonu kullanırken B3 başlamayı reddeder. İşçi, iki tüketici arasında bölünmüş bozuk bir kayıt yerine açık bir hata alır.</div>
+  </div>
+</section>
+
+<!-- B4 -->
+<section class="section section-anchor" id="b4">
+  <div class="container">
+    <span class="pill">B4 · GPIO 5 · Pin 29</span>
+    <h2>YZ Sesli Ajan</h2>
+    <p class="lead">Bulut YZ ile çift yönlü akış sesi. Varsayılan Gemini Live'dir; süpervizör Giyilebilir Ayarlar bölmesinden OpenAI Realtime'a geçebilir.</p>
+
+    <div class="flow">
+      <ol>
+        <li>B4 tek basış → <code>b4_ai_voice_only</code></li>
+        <li>İşleyici Supabase'ten <code>wearable_settings.b4_provider</code> değerini okur — <code>gemini</code> veya <code>openai</code></li>
+        <li><code>gemini-3.1-flash-live-preview</code> (Gemini Live API) ya da <code>gpt-realtime-2</code> (OpenAI Realtime API) ile WebSocket açılır</li>
+        <li><code>AudioBridge</code> mikrofon sesini modele iletir. Model cevapları hoparlöre döner. TTS çalarken mikrofon susturulur (yarı çift yönlü yankı bastırma — AEC yok).</li>
+        <li>Altı fonksiyon-çağrı aracının tamamı kullanılabilir: <code>lookup_component</code>, <code>log_incident</code>, <code>mark_task_complete</code>, <code>get_my_assignments</code>, <code>request_part</code>, <code>send_report</code></li>
+        <li>Canlı transkriptler WebSocket üzerinden ses komuta merkezine akar ve gerçek zamanlı görünür</li>
+        <li>B4 çift basış → WebSocket kapanır, ses yönlendirme durdurulur</li>
+      </ol>
+    </div>
+
+    <div class="callout">
+      <strong>Sistem isteminde üç mutlak kural</strong> en sık görülen halüsinasyonları engeller:
+      <strong>(1) Eylem tamamlandığını yalan söyleme</strong> — "kaydettim" demek, ilgili aracı önce çağırmayı gerektirir.
+      <strong>(2) Fiil tetikleyiciler</strong> — <em>kaydet, işaretle, gönder, talep et</em> gibi sözcükler eşleşen aracı anında ateşler.
+      <strong>(3) En fazla bir açıklayıcı soru</strong> — duraklamak yerine makul varsayılanlarla işlem yapılır.
+    </div>
+  </div>
+</section>
+
+<!-- B5 -->
+<section class="section section-anchor" id="b5">
+  <div class="container">
+    <span class="pill">B5 · GPIO 6 · Pin 31</span>
+    <h2>YZ Ses + Görüntü</h2>
+    <p class="lead">En güçlü buton. B4 ile aynı, ancak YZ oturumu görüntü kanalıyla yapılandırılır — model kameranın gördüğünü görür.</p>
+
+    <div class="flow">
+      <ol>
+        <li>B5 tek basış → <code>b5_ai_voice_vision</code></li>
+        <li>Sağlayıcıyla görüntü etkin WebSocket açılır</li>
+        <li>Varsayılan mod <strong>basışta-kare</strong>: ilk B5 basışı oturumu başlatır ve otomatik bir JPEG yakalar; sonraki basışlar aynı sohbete taze kareler enjekte eder</li>
+        <li>Diğer modlar (Giyilebilir Ayarlar): <code>gemini_video</code> (sürekli 1 fps akış, yalnızca Gemini) ve <code>auto_snap_4s</code> (her 4 sn'de otomatik kare, her iki sağlayıcı)</li>
+        <li>İşçi <em>"bu göstergede ne sorun var?"</em> ya da <em>"bu parça kodu nedir?"</em> gibi sorular sorabilir</li>
+        <li>JPEG'ler ses akışıyla aynı WebSocket üzerinden gider — OpenAI için base64 <code>input_image</code>, Gemini için <code>Part.from_bytes(mime_type="image/jpeg")</code></li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<!-- B6 -->
+<section class="section section-anchor" id="b6">
+  <div class="container">
+    <span class="pill" style="background: rgba(248,113,113,0.1); color:#f87171; border-color: rgba(248,113,113,0.22);">B6 · GPIO 13 · Pin 33 · SOS</span>
+    <h2>SOS Panik Modu</h2>
+    <p class="lead">B6'nın iki davranışı vardır. Tek basış bir cep-arama uyarısı tostudur. Çift basış sistemin en karmaşık akışıdır.</p>
+
+    <div class="flow">
+      <h3 style="margin-top:0;">SOS çift basış yolculuğu</h3>
+      <ol>
+        <li>B6 çift basış → <code>b6_sos_trigger</code></li>
+        <li><code>sos_events</code>'a <code>triggered_at = now()</code> ile bir satır eklenir. Satırın UUID'si SOS ID olur.</li>
+        <li><strong>İş güvenliği sorumlusuna e-posta.</strong> Fire-and-forget bir görev iç <code>send_report</code> aracını kullanır — <code>sos_alert_recipient_role</code> (varsayılan <code>"safety officer"</code>) ile <code>managers</code> tablosundan arar ve Gmail SMTP üzerinden gönderir.</li>
+        <li><strong>Açık dokümantasyon oturumu otomatik kapatılır.</strong> İşçi acil durumda evrak doldurmamalı; açık B1 oturumu otomatik olarak <code>status='closed'</code>'a güncellenir.</li>
+        <li><strong>YZ acil oturumu başlar.</strong> Varsayılan Gemini (<code>sos_provider</code> ile yapılandırılabilir); Gemini bağımlılıkları eksikse OpenAI <code>gpt-realtime-2</code>'ye düşer. OpenAI yolu sıcak <strong>"marin"</strong> sesini kullanır.</li>
+        <li><strong>Acil-özel sistem istemi enjekte edilir.</strong> Model konuşmayı ilk açar: <em>"Alaa, seninleyim. Yardım yolda. Yaralı mısın? Neredesin?"</em> — turn başına 1-2 kısa cümle, sakin ton, sesinde acelelik yok.</li>
+        <li><strong>Her <code>sos_photo_interval_s</code> saniyede bir kamera karesi otomatik yakalanır</strong> (Gemini için varsayılan 10 sn, OpenAI için 4 sn). Her kare <code>sos/&lt;sos_id&gt;/frame_&lt;ts&gt;.jpg</code>'ye yüklenir ve <code>send_image()</code> ile YZ oturumuna enjekte edilir. <code>frames_sent</code> sayacı artar.</li>
+        <li><strong>Canlı transkript</strong> <code>sos_events.live_transcript</code>'a akar. Süpervizör akışın karakter karakter belirdiğini izler.</li>
+        <li><strong>Süpervizörün SOS bölmesi kırmızıya döner ve atar</strong> — Web Audio API ile iki tonlu bir alarm.</li>
+        <li><strong>Süpervizör kapatır.</strong> Kırmızı bir KAPAT düğmesi süpervizörün adını ve nedenini soran bir modal açar. Onaylanınca <code>resolved=true</code>. Giyilebilir cihaz her 2 sn'de yoklar — ~2 sn içinde YZ oturumu kapanır, otomatik-yakalama döngüsü durur ve cihaz sessize gömülür.</li>
+        <li><strong>Sert zaman aşımı.</strong> Süpervizör uyarıyı asla görmezse, <code>asyncio.wait_for</code> <code>sos_max_duration_s</code> (varsayılan 600 sn = 10 dakika) sonrasında oturumu otomatik çözer — ses oturumu uzunluğunu ve depolama maliyetini sınırlar.</li>
+      </ol>
+    </div>
+
+    <div class="callout"><strong>Cep-arama koruması.</strong> Tek basış kasıtlı olarak işlevsizdir (uyarı tostuyla) — böylece giyilebilir cihazın duvara sürtmesi acil durumu tetiklemez. Gerçek SOS, niyetli çift-tıklama desenini gerektirir.</div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="section tight">
+  <div class="container">
+    <div class="card" style="text-align:center; padding: 2.4rem 2rem;">
+      <h2 style="margin-bottom: 0.4em;">Teknik derinlik mi istiyorsun?</h2>
+      <p class="lead" style="margin: 0 auto 1.2rem;">YZ yığını, bulut ve fonksiyon-çağrı katmanını oku.</p>
+      <a href="software-and-ai" class="btn btn-primary">Yazılım &amp; YZ →</a>
+    </div>
+  </div>
+</section>
+
+<script src="assets/chatbot.js"></script>
+<script src="assets/nav.js"></script>
+<script>document.addEventListener('DOMContentLoaded', () => window.VL.mount({ active: 'buttons', lang: 'tr' }));</script>
+</body>
+</html>
