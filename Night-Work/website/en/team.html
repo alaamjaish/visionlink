@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Team — VisionLink</title>
+  <meta name="description" content="The four-person team behind VisionLink, the EEE492 graduation project at Gazi University." />
+  <link rel="icon" type="image/svg+xml" href="../assets/logo.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../assets/styles.css" />
+</head>
+<body>
+
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">The team</span>
+    <h1>Four people. One device. Four months.</h1>
+    <p class="lead">VisionLink is the EEE492 graduation project of four students at Gazi University, Faculty of Engineering, Electrical-Electronics Engineering — Spring 2026.</p>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+    <h2>Roles</h2>
+    <div class="grid cols-2" style="margin-top: 1.4rem;">
+      <div class="card">
+        <div class="kicker">Software</div>
+        <h3>Alaa Abo Jeesh</h3>
+        <p>Software architecture, FastAPI backend, AI integration (Gemini Live + OpenAI Realtime), the tool-calling layer, and the Next.js ops dashboard. System prompts and soak-test design.</p>
+      </div>
+      <div class="card">
+        <div class="kicker">Software</div>
+        <h3>Ali Salih Yıldırım</h3>
+        <p>Software development. Co-built the wearable's Python runtime and the supervisor dashboard. Integration testing of the end-to-end voice and tool-calling paths.</p>
+      </div>
+      <div class="card">
+        <div class="kicker">Hardware + Testing</div>
+        <h3>Alaa Ali</h3>
+        <p>Hardware integration (Pi assembly, I²S wiring, button matrix), the 3D-printed enclosure and helmet bracket, audio path bring-up, and end-to-end acceptance testing of every button.</p>
+      </div>
+      <div class="card">
+        <div class="kicker">Hardware + Testing</div>
+        <h3>Fatma Defne Dolaz</h3>
+        <p>Hardware integration and helmet-mount fit-up, soak-test execution, end-to-end acceptance testing, and demo-day preparation. Requirements traceability across EEE491 → EEE492.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+    <h2>How we worked</h2>
+    <p class="lead">Daily WhatsApp standups, weekly in-person meetings on Gazi campus, code review on every pull request, and a shared GitHub repository with the <code>openai-sdk</code> branch as the canonical line.</p>
+
+    <div class="grid cols-3" style="margin-top: 1.4rem;">
+      <div class="card"><h3>18 meetings</h3><p>Scheduled across EEE492 (8 Feb – 14 May 2026). Decisions logged in <code>Documentation/sessions/YYYY-MM-DD.md</code>.</p></div>
+      <div class="card"><h3>~6 000 lines Python</h3><p>FastAPI, asyncio, picamera2, RPi.GPIO, supabase-py. Plus ~2 500 lines TypeScript on the Next.js side.</p></div>
+      <div class="card"><h3>Acceptance tests</h3><p>Six button-by-button scenarios + SOS + full-shift documentation. All passed before demo.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+    <h2>Sustainable Development Goals</h2>
+    <p class="lead">VisionLink genuinely addresses five SDGs.</p>
+
+    <div class="grid cols-2" style="margin-top: 1.4rem;">
+      <div class="card">
+        <div class="kicker">SDG 3</div>
+        <h3>Good Health &amp; Well-being</h3>
+        <p>SOS panic mode replaces a verbal shout-for-help with a structured incident: safety officer emailed instantly, AI-guided conversation, photos auto-snapped every 10 s without the worker operating the device.</p>
+      </div>
+      <div class="card">
+        <div class="kicker">SDG 4</div>
+        <h3>Quality Education</h3>
+        <p>Documentation Session, Voice Note, and Photo/Video turn every shift into a knowledge-creation event, converting tacit shop-floor expertise into searchable artefacts.</p>
+      </div>
+      <div class="card">
+        <div class="kicker">SDG 8</div>
+        <h3>Decent Work &amp; Economic Growth</h3>
+        <p>Hands-free wearable + AI assistance reduces physical risk and cognitive load. Supervisor dashboard gives real-time visibility into safety events.</p>
+      </div>
+      <div class="card">
+        <div class="kicker">SDG 9 &amp; 12</div>
+        <h3>Industry, Innovation &amp; Responsible Consumption</h3>
+        <p>A concrete Industry 4.0 artefact bridging the factory floor to cloud AI. AI-mediated parts requests and incident logging create a structured trail that replaces ad-hoc verbal requests.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section tight">
+  <div class="container">
+    <div class="card" style="text-align:center; padding: 2.4rem 2rem;">
+      <h2 style="margin-bottom: 0.4em;">Want to know more?</h2>
+      <p class="lead" style="margin: 0 auto 1.2rem;">The assistant at the bottom-right knows the full project — hardware, software, AI, the six buttons, dashboards, costs. Ask it anything.</p>
+    </div>
+  </div>
+</section>
+
+<script src="../assets/chatbot.js"></script>
+<script src="../assets/nav.js"></script>
+<script>document.addEventListener('DOMContentLoaded', () => window.VL.mount({ active: 'team' }));</script>
+</body>
+</html>

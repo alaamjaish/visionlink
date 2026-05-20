@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Donanım — VisionLink</title>
+  <meta name="description" content="VisionLink'in giyilebilir donanımının arkasındaki bileşenler, GPIO pin haritası ve kablolama felsefesi." />
+  <link rel="icon" type="image/svg+xml" href="assets/logo.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">Fiziksel katman</span>
+    <h1>Donanım</h1>
+    <p class="lead">Bir Raspberry Pi 4B, bir Pi Camera Module 3, bir I²S MEMS mikrofon, bir 8 Ω hoparlör süren bir Sınıf-D amplifikatör, altı taktil buton ve bir power bank. Toplam parça maliyeti €120'nin altında.</p>
+  </div>
+</section>
+
+<section class="section section-anchor" id="components">
+  <div class="container">
+    <h2>Bileşenler</h2>
+    <div class="table-wrap" style="margin-top: 1.4rem;">
+      <table>
+        <thead>
+          <tr><th>Bileşen</th><th>Model</th><th>Rol</th><th>Bağlantı</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>Bilgisayar</strong></td><td>Raspberry Pi 4B (8 GB)</td><td>Beyin. Tüm yazılım yerel çalışır.</td><td>USB-C 5 V / 3 A</td></tr>
+          <tr><td><strong>Kamera</strong></td><td>Pi Camera Module 3</td><td>Fotoğraflar, videolar, YZ görüntü kareleri, SOS kareleri</td><td>CSI şerit kablo</td></tr>
+          <tr><td><strong>Mikrofon</strong></td><td>SPH0645LM4H (GY-SPH0645 kartı)</td><td>YZ ve sesli notlar için ses girişi</td><td>I²S — GPIO 18 BCLK, 19 LRCLK, 20 DOUT</td></tr>
+          <tr><td><strong>Amplifikatör</strong></td><td>MAX98357A</td><td>Hoparlörü dijital I²S sinyaliyle sürer</td><td>I²S — GPIO 18 BCLK, 19 LRCLK, 21 DIN</td></tr>
+          <tr><td><strong>Hoparlör</strong></td><td>8 Ω 1 W oval (Adafruit benzeri)</td><td>Ses çıkışı</td><td>Amfide vida terminalleri</td></tr>
+          <tr><td><strong>Butonlar</strong></td><td>6 × 12 mm taktil basma</td><td>İşçi girdisi — GPIO 5, 6, 13, 22, 23, 25</td><td>Bir bacak GPIO'ya, çapraz bacak GND'ye</td></tr>
+          <tr><td><strong>Güç</strong></td><td>10 000 mAh USB-C PD power bank</td><td>Giyilebilir cihaz için bağımsız güç</td><td>USB-C</td></tr>
+          <tr><td><strong>Kasa</strong></td><td>3D-baskı PLA kasa + kask braketi</td><td>Giyilebilir form</td><td>M3 donanım</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="section section-anchor" id="gpio">
+  <div class="container">
+    <h2>GPIO pin haritası</h2>
+    <p class="lead">Pi 4B'nin 40 pinli başlığı, BCM numaralandırmasıyla. Ses paylaşılan saat hatlarıyla I²S kullanır; her buton dahili pull-up'lı bir düşen-kenar kesmesidir.</p>
+
+    <div class="table-wrap" style="margin-top: 1.4rem;">
+      <table>
+        <thead>
+          <tr><th>Fonksiyon</th><th>BCM</th><th>Pin</th><th>Notlar</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>B1 — Dokümantasyon Oturumu</td><td>23</td><td>16</td><td>Düşen kenar, dahili pull-up</td></tr>
+          <tr><td>B2 — Fotoğraf / Video</td><td>25</td><td>22</td><td>Düşen kenar, dahili pull-up</td></tr>
+          <tr><td>B3 — Sesli Not</td><td>22</td><td>15</td><td>Düşen kenar, dahili pull-up</td></tr>
+          <tr><td>B4 — YZ Sesli Ajan</td><td>5</td><td>29</td><td>Düşen kenar, dahili pull-up</td></tr>
+          <tr><td>B5 — YZ Ses + Görüntü</td><td>6</td><td>31</td><td>Düşen kenar, dahili pull-up</td></tr>
+          <tr><td>B6 — SOS</td><td>13</td><td>33</td><td>Düşen kenar, dahili pull-up</td></tr>
+          <tr><td>Mikrofon + Amp BCLK</td><td>18</td><td>12</td><td>Paylaşılan I²S bit saati</td></tr>
+          <tr><td>Mikrofon + Amp LRCLK</td><td>19</td><td>35</td><td>Paylaşılan I²S word-select saati</td></tr>
+          <tr><td>Mikrofon DOUT</td><td>20</td><td>38</td><td>Mikrofon ses bitleri</td></tr>
+          <tr><td>Amp DIN</td><td>21</td><td>40</td><td>Amfi ses bitleri</td></tr>
+          <tr><td>Mikrofon 3.3 V</td><td>—</td><td>1</td><td>Mikrofon kartı için güç</td></tr>
+          <tr><td>Amp Vin</td><td>—</td><td>2</td><td>Amfi için 5 V güç</td></tr>
+          <tr><td>Ortak Toprak</td><td>—</td><td>6, 14, 20, 34, 39</td><td>Paylaşılan toprak rayı</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout"><strong>Mikrofon ve amfi neden saat hatlarını paylaşıyor.</strong> I²S veri yolu protokolünde bir ana saat ve bir word-select vardır; iki çevre birimi yalnızca ayrı veri hatlarına sahiptir. Pi master'dır. Dört ses kablosu artı güç ve toprak, butonların yanında tek bir breadboard'a rahatça sığar.</div>
+  </div>
+</section>
+
+<section class="section section-anchor" id="wiring">
+  <div class="container">
+    <h2>Kablolama felsefesi</h2>
+    <p class="lead">İki kablolu butonlar. Dört kablolu ses. Bir pull-up gerisini halleder.</p>
+
+    <div class="grid cols-2" style="margin-top: 1.4rem;">
+      <div class="card">
+        <h3>Buton matrisi</h3>
+        <p>Her buton kendi GPIO pini ile toprak arasına bağlanır. Basmak pini toprağa kısa devre yapar; Pi'nin dahili pull-up direnci bunu bir düşen kenar olarak algılar.</p>
+        <p>Kısa bir Python programı (<code>scripts/gpio_bridge.py</code>) bu kenarları dinler ve her basışı debouncing (20 ms LOW + 40 ms HIGH), çift basış sınıflandırması (700 ms penceresi) ve basılı tutma hareketleriyle bir yazılım olayına dönüştürür.</p>
+      </div>
+      <div class="card">
+        <h3>Ses yolu</h3>
+        <p>I²S veri yolu 16 kHz mono sesi içeri, 24 kHz mono sesi dışarı taşır. Mikrofon, blok başına VAD'den önce çıkarılan sabit ~2070 DC ofsetli S16 PCM yakalar.</p>
+        <p>Amfi, 1 W hoparlör için %96 yumuşak limitlemeli 5× lineer yazılım kazancı alır. TTS çalarken mikrofon susturulur — AEC'siz yarı çift yönlü yankı bastırma.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section section-anchor" id="enclosure">
+  <div class="container">
+    <h2>Kasa</h2>
+    <p class="lead">Form faktörünü doğru yapmak için üç iterasyon.</p>
+
+    <div class="flow">
+      <ol>
+        <li><strong>İterasyon 1 — Tam kapalı PLA kasa.</strong> Sürekli YZ akışında Pi yaklaşık 25 dakikada aşırı ısındı. Reddedildi.</li>
+        <li><strong>İterasyon 2 — Havalandırmalı kasa.</strong> Daha serin, ancak kasklarda hantal. Reddedildi.</li>
+        <li><strong>İterasyon 3 — Açık üstlü çerçeve (mevcut).</strong> Pi'nin soğutucusunu açıkta bırakırken mikrofon, amfi ve pili korur. Kask braketi M3 strap-on bağlantı kullanır — kabuğa girmez, EN 397 uyumluluğunu korur.</li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<section class="section section-anchor" id="cost">
+  <div class="container">
+    <h2>Maliyet (TL)</h2>
+    <p class="lead">Mayıs 2026 Türk e-ticaret spot fiyatları. Kur: 1 USD ≈ 45.4 TL.</p>
+
+    <div class="table-wrap" style="margin-top: 1.4rem;">
+      <table>
+        <thead>
+          <tr><th>Kalem</th><th>Spesifikasyon</th><th>Adet</th><th style="text-align:right;">Birim (TL)</th><th style="text-align:right;">Toplam (TL)</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>SBC</td><td>Raspberry Pi 4B 8 GB</td><td>1</td><td style="text-align:right;">4 985</td><td style="text-align:right;">4 985</td></tr>
+          <tr><td>Kamera</td><td>Pi Camera Module 3 (75°)</td><td>1</td><td style="text-align:right;">1 665</td><td style="text-align:right;">1 665</td></tr>
+          <tr><td>Mikrofon</td><td>SPH0645 I²S MEMS</td><td>1</td><td style="text-align:right;">350</td><td style="text-align:right;">350</td></tr>
+          <tr><td>Amfi</td><td>MAX98357A I²S (Adafruit)</td><td>1</td><td style="text-align:right;">502</td><td style="text-align:right;">502</td></tr>
+          <tr><td>Hoparlör</td><td>Adafruit 4227 8 Ω 1 W</td><td>1</td><td style="text-align:right;">262</td><td style="text-align:right;">262</td></tr>
+          <tr><td>Butonlar</td><td>12 mm taktil</td><td>6</td><td style="text-align:right;">8</td><td style="text-align:right;">48</td></tr>
+          <tr><td>Depolama</td><td>SanDisk Ultra 32 GB A1</td><td>1</td><td style="text-align:right;">250</td><td style="text-align:right;">250</td></tr>
+          <tr><td>PSU</td><td>RPi 5.1 V / 3 A USB-C</td><td>1</td><td style="text-align:right;">700</td><td style="text-align:right;">700</td></tr>
+          <tr><td>Power bank</td><td>10 000 mAh USB-C PD</td><td>1</td><td style="text-align:right;">1 300</td><td style="text-align:right;">1 300</td></tr>
+          <tr><td>CSI kablo</td><td>30 cm FFC 15-pin</td><td>1</td><td style="text-align:right;">90</td><td style="text-align:right;">90</td></tr>
+          <tr><td>Kablolar</td><td>Jumper kiti + breadboard</td><td>1</td><td style="text-align:right;">280</td><td style="text-align:right;">280</td></tr>
+          <tr><td>Kasa</td><td>3D-baskı PLA</td><td>1</td><td style="text-align:right;">250</td><td style="text-align:right;">250</td></tr>
+          <tr><td>Kask bağlantısı</td><td>ABS braket + M3 + strap</td><td>1</td><td style="text-align:right;">200</td><td style="text-align:right;">200</td></tr>
+          <tr><td>Soğutma</td><td>Heatsink kit + 30 mm fan</td><td>1</td><td style="text-align:right;">220</td><td style="text-align:right;">220</td></tr>
+          <tr><td colspan="4" style="text-align:right;"><strong>Ara toplam</strong></td><td style="text-align:right;">11 102</td></tr>
+          <tr><td colspan="4" style="text-align:right;">Kargo + KDV payı (~%5)</td><td style="text-align:right;">555</td></tr>
+          <tr><td colspan="4" style="text-align:right;"><strong>Prototip toplam</strong></td><td style="text-align:right;"><strong>≈ 11 657 TL (~$257)</strong></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout"><strong>1 000 birimlik MOQ ölçeğinde</strong> — CM4 Lite + özel taşıyıcı, OEM kamera, PCB'de çıplak ses entegre devreleri, enjeksiyon kalıplı kasa, kaldırılmış PSU, toplu bileşenler — birim maliyeti <strong>≈ 4 170 TL (~$92)</strong>'ye düşer, %64 azalma.</div>
+  </div>
+</section>
+
+<script src="assets/chatbot.js"></script>
+<script src="assets/nav.js"></script>
+<script>document.addEventListener('DOMContentLoaded', () => window.VL.mount({ active: 'hardware', lang: 'tr' }));</script>
+</body>
+</html>

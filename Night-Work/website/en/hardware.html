@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hardware — VisionLink</title>
+  <meta name="description" content="The components, GPIO pin map, and wiring philosophy behind VisionLink's wearable hardware." />
+  <link rel="icon" type="image/svg+xml" href="../assets/logo.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../assets/styles.css" />
+</head>
+<body>
+
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">The physical layer</span>
+    <h1>Hardware</h1>
+    <p class="lead">A Raspberry Pi 4B, a Pi Camera Module 3, an I²S MEMS microphone, a Class-D amplifier driving an 8 Ω speaker, six tactile push buttons, and a power bank. Total parts cost is under €120.</p>
+  </div>
+</section>
+
+<section class="section section-anchor" id="components">
+  <div class="container">
+    <h2>Components</h2>
+    <div class="table-wrap" style="margin-top: 1.4rem;">
+      <table>
+        <thead>
+          <tr><th>Component</th><th>Model</th><th>Role</th><th>Connection</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>Computer</strong></td><td>Raspberry Pi 4B (8 GB)</td><td>Brain. Runs all software locally.</td><td>USB-C 5 V / 3 A</td></tr>
+          <tr><td><strong>Camera</strong></td><td>Pi Camera Module 3</td><td>Photos, videos, AI vision frames, SOS frames</td><td>CSI ribbon cable</td></tr>
+          <tr><td><strong>Microphone</strong></td><td>SPH0645LM4H (GY-SPH0645 board)</td><td>Voice input for the AI and voice notes</td><td>I²S — GPIO 18 BCLK, 19 LRCLK, 20 DOUT</td></tr>
+          <tr><td><strong>Amplifier</strong></td><td>MAX98357A</td><td>Drives the speaker from a digital I²S signal</td><td>I²S — GPIO 18 BCLK, 19 LRCLK, 21 DIN</td></tr>
+          <tr><td><strong>Speaker</strong></td><td>8 Ω 1 W oval (Adafruit-style)</td><td>Audio output</td><td>Screw terminals on the amp</td></tr>
+          <tr><td><strong>Buttons</strong></td><td>6 × 12 mm tactile push</td><td>Worker input — GPIO 5, 6, 13, 22, 23, 25</td><td>One leg to GPIO, diagonal leg to GND</td></tr>
+          <tr><td><strong>Power</strong></td><td>10 000 mAh USB-C PD power bank</td><td>Standalone power for the wearable</td><td>USB-C</td></tr>
+          <tr><td><strong>Mount</strong></td><td>3D-printed PLA enclosure + helmet bracket</td><td>Wearable form</td><td>M3 hardware</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="section section-anchor" id="gpio">
+  <div class="container">
+    <h2>GPIO pin map</h2>
+    <p class="lead">The Pi 4B's 40-pin header in BCM numbering. Audio uses I²S with shared clock lines; each button is a falling-edge interrupt with internal pull-up.</p>
+
+    <div class="table-wrap" style="margin-top: 1.4rem;">
+      <table>
+        <thead>
+          <tr><th>Function</th><th>BCM</th><th>Pin</th><th>Notes</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>B1 — Documentation Session</td><td>23</td><td>16</td><td>Falling edge, internal pull-up</td></tr>
+          <tr><td>B2 — Photo / Video</td><td>25</td><td>22</td><td>Falling edge, internal pull-up</td></tr>
+          <tr><td>B3 — Voice Note</td><td>22</td><td>15</td><td>Falling edge, internal pull-up</td></tr>
+          <tr><td>B4 — AI Voice Agent</td><td>5</td><td>29</td><td>Falling edge, internal pull-up</td></tr>
+          <tr><td>B5 — AI Voice + Vision</td><td>6</td><td>31</td><td>Falling edge, internal pull-up</td></tr>
+          <tr><td>B6 — SOS</td><td>13</td><td>33</td><td>Falling edge, internal pull-up</td></tr>
+          <tr><td>Mic + Amp BCLK</td><td>18</td><td>12</td><td>Shared I²S bit clock</td></tr>
+          <tr><td>Mic + Amp LRCLK</td><td>19</td><td>35</td><td>Shared I²S word-select clock</td></tr>
+          <tr><td>Mic DOUT</td><td>20</td><td>38</td><td>Microphone audio bits</td></tr>
+          <tr><td>Amp DIN</td><td>21</td><td>40</td><td>Amplifier audio bits</td></tr>
+          <tr><td>Mic 3.3 V</td><td>—</td><td>1</td><td>Power for mic board</td></tr>
+          <tr><td>Amp Vin</td><td>—</td><td>2</td><td>5 V power for amplifier</td></tr>
+          <tr><td>Common Ground</td><td>—</td><td>6, 14, 20, 34, 39</td><td>Shared ground rail</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout"><strong>Why the mic and amp share clock lines.</strong> The I²S bus protocol has one master clock and word-select; the two peripherals just have separate data lines. The Pi is the master. All four audio wires plus power and ground fit comfortably alongside the buttons on a single breadboard.</div>
+  </div>
+</section>
+
+<section class="section section-anchor" id="wiring">
+  <div class="container">
+    <h2>Wiring philosophy</h2>
+    <p class="lead">Two-wire buttons. Four-wire audio. One pull-up does the rest.</p>
+
+    <div class="grid cols-2" style="margin-top: 1.4rem;">
+      <div class="card">
+        <h3>The button matrix</h3>
+        <p>Each button is wired between its GPIO pin and ground. Pressing the button shorts the pin to ground, which the Pi's internal pull-up resistor detects as a falling edge.</p>
+        <p>A short Python program (<code>scripts/gpio_bridge.py</code>) listens for those edges and turns each press into a software event with debounce (20 ms LOW + 40 ms HIGH), double-press classification (700 ms window), and hold-to-record gestures.</p>
+      </div>
+      <div class="card">
+        <h3>The audio path</h3>
+        <p>The I²S bus carries 16 kHz mono audio in and 24 kHz mono audio out. The mic captures S16 PCM with a constant ~2070 DC offset (subtracted per block before VAD).</p>
+        <p>The amp gets a 5× linear software gain with a 96 % soft-limiter for the 1 W speaker. Mic is muted while TTS plays — half-duplex echo suppression without an AEC.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section section-anchor" id="enclosure">
+  <div class="container">
+    <h2>Enclosure</h2>
+    <p class="lead">Three iterations to get the form factor right.</p>
+
+    <div class="flow">
+      <ol>
+        <li><strong>Iteration 1 — Full-cover PLA shell.</strong> Overheated the Pi in ~25 minutes under sustained AI streaming. Rejected.</li>
+        <li><strong>Iteration 2 — Ventilated enclosure.</strong> Cooler, but bulky on a hard hat. Rejected.</li>
+        <li><strong>Iteration 3 — Open-top frame (current).</strong> Exposes the Pi heatsink while protecting the mic, amp, and battery. Helmet bracket uses M3 strap-on attachment — does not penetrate the shell, preserves EN 397 conformance.</li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<section class="section section-anchor" id="cost">
+  <div class="container">
+    <h2>Cost (TRY)</h2>
+    <p class="lead">May 2026 spot prices from Turkish e-commerce. FX: 1 USD ≈ 45.4 TRY.</p>
+
+    <div class="table-wrap" style="margin-top: 1.4rem;">
+      <table>
+        <thead>
+          <tr><th>Item</th><th>Spec</th><th>Qty</th><th style="text-align:right;">Unit (TRY)</th><th style="text-align:right;">Total (TRY)</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>SBC</td><td>Raspberry Pi 4B 8 GB</td><td>1</td><td style="text-align:right;">4 985</td><td style="text-align:right;">4 985</td></tr>
+          <tr><td>Camera</td><td>Pi Camera Module 3 (75°)</td><td>1</td><td style="text-align:right;">1 665</td><td style="text-align:right;">1 665</td></tr>
+          <tr><td>Mic</td><td>SPH0645 I²S MEMS</td><td>1</td><td style="text-align:right;">350</td><td style="text-align:right;">350</td></tr>
+          <tr><td>Amp</td><td>MAX98357A I²S (Adafruit)</td><td>1</td><td style="text-align:right;">502</td><td style="text-align:right;">502</td></tr>
+          <tr><td>Speaker</td><td>Adafruit 4227 8 Ω 1 W</td><td>1</td><td style="text-align:right;">262</td><td style="text-align:right;">262</td></tr>
+          <tr><td>Buttons</td><td>12 mm tactile</td><td>6</td><td style="text-align:right;">8</td><td style="text-align:right;">48</td></tr>
+          <tr><td>Storage</td><td>SanDisk Ultra 32 GB A1</td><td>1</td><td style="text-align:right;">250</td><td style="text-align:right;">250</td></tr>
+          <tr><td>PSU</td><td>RPi 5.1 V / 3 A USB-C</td><td>1</td><td style="text-align:right;">700</td><td style="text-align:right;">700</td></tr>
+          <tr><td>Power bank</td><td>10 000 mAh USB-C PD</td><td>1</td><td style="text-align:right;">1 300</td><td style="text-align:right;">1 300</td></tr>
+          <tr><td>CSI cable</td><td>30 cm FFC 15-pin</td><td>1</td><td style="text-align:right;">90</td><td style="text-align:right;">90</td></tr>
+          <tr><td>Wiring</td><td>Jumper kit + breadboard</td><td>1</td><td style="text-align:right;">280</td><td style="text-align:right;">280</td></tr>
+          <tr><td>Enclosure</td><td>3D-printed PLA</td><td>1</td><td style="text-align:right;">250</td><td style="text-align:right;">250</td></tr>
+          <tr><td>Helmet mount</td><td>ABS bracket + M3 + strap</td><td>1</td><td style="text-align:right;">200</td><td style="text-align:right;">200</td></tr>
+          <tr><td>Cooling</td><td>Heatsink kit + 30 mm fan</td><td>1</td><td style="text-align:right;">220</td><td style="text-align:right;">220</td></tr>
+          <tr><td colspan="4" style="text-align:right;"><strong>Subtotal</strong></td><td style="text-align:right;">11 102</td></tr>
+          <tr><td colspan="4" style="text-align:right;">Shipping + KDV slack (~5 %)</td><td style="text-align:right;">555</td></tr>
+          <tr><td colspan="4" style="text-align:right;"><strong>Prototype total</strong></td><td style="text-align:right;"><strong>≈ 11 657 TRY (~$257)</strong></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout"><strong>At 1 000-unit scale</strong> — switching to CM4 Lite + custom carrier, OEM camera, bare audio ICs on PCB, injection-moulded enclosure, eliminated PSU, bulk components — landed cost drops to <strong>≈ 4 170 TRY (~$92)</strong>, a 64 % reduction.</div>
+  </div>
+</section>
+
+<script src="../assets/chatbot.js"></script>
+<script src="../assets/nav.js"></script>
+<script>document.addEventListener('DOMContentLoaded', () => window.VL.mount({ active: 'hardware' }));</script>
+</body>
+</html>

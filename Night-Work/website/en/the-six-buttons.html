@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>The Six Buttons — VisionLink</title>
+  <meta name="description" content="Every button on VisionLink — what it does, the gestures, and the journey from finger to cloud." />
+  <link rel="icon" type="image/svg+xml" href="../assets/logo.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../assets/styles.css" />
+</head>
+<body>
+
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">Hardware interface</span>
+    <h1>The Six Buttons</h1>
+    <p class="lead">Two modes, six handlers, three gestures (single, double, hold). Each button is a falling-edge GPIO interrupt that turns into an async Python coroutine.</p>
+
+    <div class="toc">
+      <h4>On this page</h4>
+      <ol>
+        <li><a href="#b1">B1 — Documentation Session</a></li>
+        <li><a href="#b2">B2 — Photo / Video</a></li>
+        <li><a href="#b3">B3 — Voice Note</a></li>
+        <li><a href="#b4">B4 — AI Voice Agent</a></li>
+        <li><a href="#b5">B5 — AI Voice + Vision</a></li>
+        <li><a href="#b6">B6 — SOS Panic Mode</a></li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<!-- B1 -->
+<section class="section section-anchor" id="b1">
+  <div class="container">
+    <span class="pill">B1 · GPIO 23 · Pin 16</span>
+    <h2>Documentation Session</h2>
+    <p class="lead">Opens or closes a shift session. Everything captured while it's open (photos, videos, voice notes) is grouped under the same <code>session_id</code> for the supervisor.</p>
+
+    <div class="flow">
+      <h3 style="margin-top:0;">Press journey</h3>
+      <ol>
+        <li>Worker presses B1. The GPIO pin drops from 3.3 V to 0 V.</li>
+        <li>The Linux kernel raises a falling-edge interrupt on GPIO 23.</li>
+        <li><code>scripts/gpio_bridge.py</code> debounces (~20 ms LOW + 40 ms HIGH) and POSTs <code>/api/button/1/single</code> to the FastAPI dashboard.</li>
+        <li>The handler <code>b1_doc_session_toggle</code> reads current state. No session open? Insert a new <code>sessions</code> row. Session open? Update <code>status='closed'</code>, <code>ended_at = now()</code>.</li>
+        <li>Supabase's logical replication pushes the change over Realtime. The supervisor's dashboard reflects the new state within ~200 ms.</li>
+      </ol>
+    </div>
+
+    <div class="callout"><strong>Guard rail:</strong> An 800 ms cooldown stops mechanical bounce from being misclassified as a deliberate second press that would close the session right after opening it.</div>
+  </div>
+</section>
+
+<!-- B2 -->
+<section class="section section-anchor" id="b2">
+  <div class="container">
+    <span class="pill">B2 · GPIO 25 · Pin 22</span>
+    <h2>Photo / Video</h2>
+    <p class="lead">A single press is a JPEG. A double press is a 5-second MP4. The double-press window is 700 ms.</p>
+
+    <div class="grid cols-2" style="margin-top: 1.4rem;">
+      <div class="card">
+        <h3>Photo journey</h3>
+        <ol>
+          <li>B2 single press → <code>b2_take_photo</code></li>
+          <li><code>picamera2</code> captures a 1280×720 JPEG at quality 85</li>
+          <li>Bytes upload to <code>session-assets/&lt;session_id&gt;/photo_&lt;ts&gt;.jpg</code></li>
+          <li><code>session_assets</code> row inserted (<code>kind='photo'</code>)</li>
+          <li>Supervisor sees the thumbnail in ~3 s end-to-end</li>
+        </ol>
+      </div>
+      <div class="card">
+        <h3>Video journey</h3>
+        <ol>
+          <li>B2 double press → <code>b2_record_video</code></li>
+          <li><code>rpicam-vid --codec libav --libav-format mp4 -t 5000</code> writes a 5 s MP4 (1280×720 @ 30 fps)</li>
+          <li>MP4 uploads to the same bucket</li>
+          <li><code>session_assets</code> row with <code>kind='video'</code>, <code>duration_s=5</code></li>
+          <li>Hard cap at <code>B2_VIDEO_MAX_DURATION</code> (default 300 s) prevents runaway captures</li>
+        </ol>
+      </div>
+    </div>
+
+    <div class="callout"><strong>Why no audio in the video.</strong> The I²S microphone is held exclusively by the always-running <code>audio_worker</code> subprocess that feeds AI sessions and B3 voice notes. A parallel <code>arecord</code> would fail with "device busy". An audio mux through the existing AudioBridge is a planned improvement.</div>
+  </div>
+</section>
+
+<!-- B3 -->
+<section class="section section-anchor" id="b3">
+  <div class="container">
+    <span class="pill">B3 · GPIO 22 · Pin 15</span>
+    <h2>Voice Note</h2>
+    <p class="lead">Press to start, press again to stop. PCM 16 kHz mono from the SPH0645 I²S MEMS microphone, wrapped in a WAV header on upload.</p>
+
+    <div class="flow">
+      <ol>
+        <li>B3 single press → <code>b3_voice_note_start</code></li>
+        <li>The handler subscribes to the <code>AudioBridge</code> mic stream and starts buffering raw PCM in memory</li>
+        <li>Worker speaks naturally (e.g. <em>"check valve B7 tomorrow morning"</em>)</li>
+        <li>B3 pressed again → <code>b3_voice_note_end</code></li>
+        <li>Buffered PCM is wrapped in a WAV header (16 kHz, 16-bit, mono) and uploaded to <code>session-assets/&lt;session_id&gt;/voice_&lt;ts&gt;.wav</code></li>
+        <li><code>session_assets</code> row inserted with <code>kind='voice_note'</code> and computed <code>duration_s</code></li>
+        <li>Supervisor sees an inline playable <code>&lt;audio&gt;</code> element on the dashboard</li>
+      </ol>
+    </div>
+
+    <div class="callout"><strong>Microphone exclusivity:</strong> B3 refuses to start while any AI session (B4, B5, or B6) is using the mic. The worker gets an explicit error rather than a corrupted recording split between two consumers.</div>
+  </div>
+</section>
+
+<!-- B4 -->
+<section class="section section-anchor" id="b4">
+  <div class="container">
+    <span class="pill">B4 · GPIO 5 · Pin 29</span>
+    <h2>AI Voice Agent</h2>
+    <p class="lead">Bidirectional streaming voice with a cloud AI. Default is Gemini Live; can be switched to OpenAI Realtime from the supervisor's Wearable Settings panel.</p>
+
+    <div class="flow">
+      <ol>
+        <li>B4 single press → <code>b4_ai_voice_only</code></li>
+        <li>Handler reads <code>wearable_settings.b4_provider</code> from Supabase — <code>gemini</code> or <code>openai</code></li>
+        <li>WebSocket opens to <code>gemini-3.1-flash-live-preview</code> (Gemini Live API) or <code>gpt-realtime-2</code> (OpenAI Realtime API)</li>
+        <li><code>AudioBridge</code> forwards mic audio → model. Model responses → speaker. Mic is muted while TTS plays (half-duplex echo suppression — no AEC).</li>
+        <li>All six function-calling tools exposed: <code>lookup_component</code>, <code>log_incident</code>, <code>mark_task_complete</code>, <code>get_my_assignments</code>, <code>request_part</code>, <code>send_report</code></li>
+        <li>Live transcripts stream over WebSocket to the voice command center and appear in real time</li>
+        <li>B4 double-press → close WebSocket, stop audio routing</li>
+      </ol>
+    </div>
+
+    <div class="callout">
+      <strong>Three absolute rules in the system prompt</strong> stop the most common hallucinations:
+      <strong>(1) Never lie about completing actions</strong> — saying "I logged it" requires calling the matching tool first.
+      <strong>(2) Verb triggers</strong> — words like <em>log, mark, send, request</em> fire the matching tool immediately.
+      <strong>(3) One clarifying question max</strong> — commit with reasonable defaults instead of stalling.
+    </div>
+  </div>
+</section>
+
+<!-- B5 -->
+<section class="section section-anchor" id="b5">
+  <div class="container">
+    <span class="pill">B5 · GPIO 6 · Pin 31</span>
+    <h2>AI Voice + Vision</h2>
+    <p class="lead">The most powerful button. Same as B4 but the AI session is configured with a vision channel — the model sees what the camera sees.</p>
+
+    <div class="flow">
+      <ol>
+        <li>B5 single press → <code>b5_ai_voice_vision</code></li>
+        <li>WebSocket opens to the provider with vision enabled</li>
+        <li>Default mode is <strong>snap-on-press</strong>: the first B5 press starts the session and triggers an automatic JPEG snapshot; subsequent single presses inject fresh frames into the same conversation</li>
+        <li>Alternative modes (from Wearable Settings): <code>gemini_video</code> (continuous 1 fps stream, Gemini-only) and <code>auto_snap_4s</code> (auto-snap every 4 s, both providers)</li>
+        <li>Worker asks things like <em>"what's wrong with this gauge?"</em> or <em>"what's this part code?"</em></li>
+        <li>JPEGs travel over the same WebSocket as audio — for OpenAI, as base64 <code>input_image</code>; for Gemini, as <code>Part.from_bytes(mime_type="image/jpeg")</code></li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<!-- B6 -->
+<section class="section section-anchor" id="b6">
+  <div class="container">
+    <span class="pill" style="background: rgba(248,113,113,0.1); color:#f87171; border-color: rgba(248,113,113,0.22);">B6 · GPIO 13 · Pin 33 · SOS</span>
+    <h2>SOS Panic Mode</h2>
+    <p class="lead">B6 has two behaviors. A single press is a pocket-dial warning toast. A double press is the most complex flow in the system.</p>
+
+    <div class="flow">
+      <h3 style="margin-top:0;">SOS double-press journey</h3>
+      <ol>
+        <li>B6 double press → <code>b6_sos_trigger</code></li>
+        <li>A row is inserted into <code>sos_events</code> with <code>triggered_at = now()</code>. The row's UUID becomes the SOS ID.</li>
+        <li><strong>Email the safety officer.</strong> A fire-and-forget task uses the <code>send_report</code> tool internally — looks up <code>sos_alert_recipient_role</code> (default <code>"safety officer"</code>) in the <code>managers</code> table and sends via Gmail SMTP.</li>
+        <li><strong>Auto-close any open documentation session.</strong> Worker shouldn't be doing paperwork in an emergency, so any open B1 session is updated to <code>status='closed'</code> automatically.</li>
+        <li><strong>Start an AI emergency session.</strong> Gemini by default (configurable via <code>sos_provider</code>); falls back to OpenAI <code>gpt-realtime-2</code> if Gemini deps are missing. OpenAI path uses the warm <strong>"marin"</strong> voice.</li>
+        <li><strong>Inject an emergency-specific system prompt.</strong> The model opens the call first: <em>"Alaa, I'm here with you. Help is on the way. Are you hurt? Where are you?"</em> — 1–2 short sentences per turn, calm tone, no urgency in the voice.</li>
+        <li><strong>Auto-snap a camera frame every <code>sos_photo_interval_s</code> seconds</strong> (default 10 s for Gemini, 4 s for OpenAI). Each frame uploads to <code>sos/&lt;sos_id&gt;/frame_&lt;ts&gt;.jpg</code> and is injected into the AI session via <code>send_image()</code>. The <code>frames_sent</code> counter increments.</li>
+        <li><strong>Stream the live transcript</strong> of what the AI says into <code>sos_events.live_transcript</code>. The supervisor watches the stream appear character-by-character.</li>
+        <li><strong>The supervisor's SOS panel goes red and pulses</strong> with a Web Audio API two-tone alarm.</li>
+        <li><strong>Supervisor shuts it off.</strong> A red SHUT OFF button opens a modal asking for the supervisor's name and reason. On confirm, <code>resolved=true</code>. The wearable polls every 2 s — within ~2 s, the AI session closes, the auto-snap loop stops, and the wearable falls silent.</li>
+        <li><strong>Hard timeout.</strong> If the supervisor never sees the alert, <code>asyncio.wait_for</code> auto-resolves after <code>sos_max_duration_s</code> (default 600 s = 10 minutes) to bound audio session length and storage cost.</li>
+      </ol>
+    </div>
+
+    <div class="callout"><strong>Pocket-dial protection.</strong> A single press is intentionally a no-op (with a toast warning) so that brushing the wearable against a wall doesn't trigger an emergency. A real SOS requires the deliberate two-tap pattern.</div>
+  </div>
+</section>
+
+<!-- Demo CTA -->
+<section class="section tight">
+  <div class="container">
+    <div class="card" style="text-align:center; padding: 2.4rem 2rem;">
+      <h2 style="margin-bottom: 0.4em;">Want the technical depth?</h2>
+      <p class="lead" style="margin: 0 auto 1.2rem;">Read about the AI stack, the cloud, and the function-calling layer.</p>
+      <a href="software-and-ai" class="btn btn-primary">Software &amp; AI →</a>
+    </div>
+  </div>
+</section>
+
+<script src="../assets/chatbot.js"></script>
+<script src="../assets/nav.js"></script>
+<script>document.addEventListener('DOMContentLoaded', () => window.VL.mount({ active: 'buttons' }));</script>
+</body>
+</html>

@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>How to Use VisionLink — One Worker, One Shift</title>
+  <meta name="description" content="A from-A-to-Z walkthrough of using VisionLink on a real factory floor. When to use each button, why it matters, what the worker says, and what happens behind the scenes." />
+  <link rel="icon" type="image/svg+xml" href="../assets/logo.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../assets/styles.css" />
+</head>
+<body>
+
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">A real shift, button by button</span>
+    <h1>How to Use VisionLink</h1>
+    <p class="lead">Six buttons. One shift. From the moment you clip the wearable on, to the moment you take it off — every press, in order, with the scenario behind it and the benefit on the floor.</p>
+  </div>
+</section>
+
+<!-- The scenario opener -->
+<section class="section tight">
+  <div class="container">
+    <div class="scenario-intro">
+      <p><strong>Imagine it's 8 AM.</strong> You're a maintenance technician at a metal-fabrication shop. You clip a VisionLink — a small device about the size of a deck of cards — onto your hard hat. A short tone plays in your ear. The device is awake.</p>
+      <p>You will not open an app today. You will not type. You will not take off your gloves. You will press buttons.</p>
+      <p style="margin-bottom: 0;">Here is exactly how the next eight hours look.</p>
+    </div>
+  </div>
+</section>
+
+<!-- The moments -->
+<section class="section tight">
+  <div class="container">
+
+    <div class="moments">
+
+      <!-- MOMENT 1 — B1 -->
+      <div class="moment">
+        <div class="stamp"><span class="big">08:00</span>Start</div>
+        <div class="body">
+          <span class="btn-tag">▶ Button 1 — Single press</span>
+          <h3>Open your shift</h3>
+          <div class="scene">You walk onto the floor. You press <strong>B1</strong> once.</div>
+          <p class="what">Behind the scenes: VisionLink creates a "session" in the cloud database. Everything you capture today — photos, voice notes, every part lookup, every emergency — is automatically tagged to this session, with your name on it. Your supervisor's dashboard quietly lights up: <em>"Mehmet's shift started, 08:00."</em></p>
+          <div class="benefit"><strong>Why it matters:</strong> No timesheet to fill in. No "did I clock in?" doubt. The shift logs itself. And if a question comes up at 5 PM about what happened at 11 AM, your supervisor can scroll back to that exact moment.</div>
+        </div>
+      </div>
+
+      <!-- MOMENT 2 — B4 -->
+      <div class="moment">
+        <div class="stamp"><span class="big">08:42</span>Question</div>
+        <div class="body">
+          <span class="btn-tag">🎤 Button 4 — Single press, talk</span>
+          <h3>Ask the AI something you forgot</h3>
+          <div class="scene">You're standing in front of pump A3. You're about to retorque the M8 bolts but you can't remember the spec. You press <strong>B4</strong>.</div>
+          <span class="quote">"What's the torque spec on the pump A3 M8 bolts?"</span>
+          <p class="what">Behind the scenes: VisionLink opens a streaming voice session with Google Gemini, which searches the parts catalogue for "pump A3 M8 bolts", finds the exact row, and answers in your ear in under 1.5 seconds.</p>
+          <span class="quote">"Forty-two newton metres, tightened in two passes. Last maintenance was sixty days ago."</span>
+          <div class="benefit"><strong>Why it matters:</strong> You did not walk to the workstation. You did not flip through a binder. You did not call the foreman. The knowledge that used to live in the foreman's head is now in yours, in under two seconds.</div>
+        </div>
+      </div>
+
+      <!-- MOMENT 3 — B2 -->
+      <div class="moment">
+        <div class="stamp"><span class="big">09:15</span>Capture</div>
+        <div class="body">
+          <span class="btn-tag">📸 Button 2 — Single press = photo, Double = video</span>
+          <h3>Document what you found</h3>
+          <div class="scene">You spot a slow leak on valve B7. You press <strong>B2</strong> once. <em>Click.</em></div>
+          <p class="what">A 1280×720 photo is captured and uploaded to your shift session. If you double-press B2, you get a 5-second video instead — useful when a leak only shows up while a pump is running, or when you want the supervisor to see the gauge needle moving.</p>
+          <div class="benefit"><strong>Why it matters:</strong> No phone unlock. No fumbling with a glove off. The photo is already in the cloud, already tagged with your session, already visible on the supervisor's screen — by the time you've put your hand back down.</div>
+        </div>
+      </div>
+
+      <!-- MOMENT 4 — B3 -->
+      <div class="moment">
+        <div class="stamp"><span class="big">09:16</span>Voice note</div>
+        <div class="body">
+          <span class="btn-tag">🎙 Button 3 — Press, talk, press again</span>
+          <h3>Tell the future-you what you saw</h3>
+          <div class="scene">You press <strong>B3</strong>.</div>
+          <span class="quote">"Valve B7 — slow drip, looks like the gasket. Probably needs replacement before Friday."</span>
+          <p class="what">You press B3 again. The audio is wrapped in a WAV header and uploaded to the same session. The supervisor sees a play-button next to the photo you just took.</p>
+          <div class="benefit"><strong>Why it matters:</strong> Photos without context are puzzles. Now the photo has a voice on it — yours, with your hypothesis, your urgency, your timing. The next person picking up this issue has everything they need.</div>
+        </div>
+      </div>
+
+      <!-- MOMENT 5 — B5 -->
+      <div class="moment">
+        <div class="stamp"><span class="big">10:24</span>Show &amp; ask</div>
+        <div class="body">
+          <span class="btn-tag">👁 Button 5 — Press, the AI sees what you see</span>
+          <h3>Show the AI a part you don't recognise</h3>
+          <div class="scene">You're staring at a small grey component you've never seen before. There's a QR code on its housing. You press <strong>B5</strong>, pointing the camera at it.</div>
+          <span class="quote">"Hey — what is this?"</span>
+          <p class="what">Behind the scenes: VisionLink captures the camera frame, sends it to Gemini along with your voice question, and the AI <em>looks</em> at the image. It reads the QR code, cross-references the components catalogue, and answers.</p>
+          <span class="quote">"That's a pressure transducer, part code PT-204. Calibration interval is 90 days. Last calibrated 14 days ago — you're fine."</span>
+          <div class="benefit"><strong>Why it matters:</strong> The AI has eyes. You stopped relying on "I think it's the…" guesses. The component identifies itself.</div>
+        </div>
+      </div>
+
+      <!-- MOMENT 6 — B4 again with action -->
+      <div class="moment">
+        <div class="stamp"><span class="big">11:50</span>Request a part</div>
+        <div class="body">
+          <span class="btn-tag">🎤 Button 4 — Press, ask the AI to act</span>
+          <h3>Order a replacement, hands-free</h3>
+          <div class="scene">You've decided valve B7's gasket needs replacing. You press <strong>B4</strong>.</div>
+          <span class="quote">"Request two replacement gaskets for valve B7, marked urgent."</span>
+          <p class="what">The AI hears the verb "request" and calls the <code>request_part</code> tool. A row appears in the procurement queue with quantity 2, urgency "urgent", reason "valve B7 gasket leak", with your name on it. The supervisor sees a new request light up on the Parts panel.</p>
+          <span class="quote">"Done. Two gaskets requested, urgent, with your name on it. Anything else?"</span>
+          <div class="benefit"><strong>Why it matters:</strong> You did not walk to procurement. You did not write the request on paper. You did not forget. The order exists, with a paper trail, before you put your hand back down.</div>
+        </div>
+      </div>
+
+      <!-- MOMENT 7 — B4 send_report -->
+      <div class="moment">
+        <div class="stamp"><span class="big">15:30</span>End-of-day email</div>
+        <div class="body">
+          <span class="btn-tag">🎤 Button 4 — Press, ask the AI to draft</span>
+          <h3>Send a real email to your supervisor</h3>
+          <div class="scene">It's near the end of your shift. You press <strong>B4</strong>.</div>
+          <span class="quote">"Send a daily ops report to the supervisor saying we completed the pump A3 inspection, found two minor leaks on valve B7, and need replacement gaskets by Friday."</span>
+          <p class="what">The AI looks up "supervisor" in the managers table, finds the "Daily Operations" template, injects today's actual incidents, tasks, and part requests as live data, and sends a real, well-written email through Gmail SMTP. <em>"One sec, drafting that now…"</em> — pause — <em>"Email sent to Mr. Acharya."</em></p>
+          <div class="benefit"><strong>Why it matters:</strong> The supervisor doesn't get a sticky note at 5 PM. They get a structured email at 3:30 PM, with timestamps, photos, voice notes attached, and your day's work properly accounted for. Your evening starts on time.</div>
+        </div>
+      </div>
+
+      <!-- MOMENT 8 — B6 SOS -->
+      <div class="moment sos">
+        <div class="stamp"><span class="big">SOS</span>Emergency</div>
+        <div class="body">
+          <span class="btn-tag">🚨 Button 6 — Double-press to arm</span>
+          <h3>The one button you hope never to press</h3>
+          <div class="scene">Hypothetically: a pipe ruptures. You slip, you're on the floor, your phone's out of reach. You double-press <strong>B6</strong> — one of the few gestures that works through a thick glove with no fine motor control.</div>
+          <p class="what">In one second: the wearable inserts an SOS event in the database, emails the safety officer, auto-closes your documentation session, opens a calm AI voice that says:</p>
+          <span class="quote">"Alaa, I'm here with you. Help is on the way. Are you hurt? Where are you?"</span>
+          <p class="what">Every 10 seconds, the camera quietly captures a frame and shows it to the supervisor's dashboard. The supervisor sees a red, pulsing panel — picks up their phone — and shuts down the SOS in 2 seconds once they're on the way to you.</p>
+          <div class="benefit"><strong>Why it matters:</strong> An injured worker cannot unlock a phone. They cannot dial. They might not be able to talk. VisionLink does all of it for them. The supervisor knows where you are, what you can see, and what you said — without you doing anything except pressing two buttons.</div>
+        </div>
+      </div>
+
+      <!-- MOMENT 9 — Close shift -->
+      <div class="moment">
+        <div class="stamp"><span class="big">17:00</span>End</div>
+        <div class="body">
+          <span class="btn-tag">▶ Button 1 — Single press to close</span>
+          <h3>Close your shift</h3>
+          <div class="scene">You finish your last task. You press <strong>B1</strong> once.</div>
+          <p class="what">The session closes. The supervisor's dashboard updates: <em>"Mehmet's shift ended, 17:00 — 7 photos, 3 videos, 12 voice notes, 4 part lookups, 1 incident logged, 2 parts requested, 1 report sent."</em></p>
+          <div class="benefit"><strong>Why it matters:</strong> Your shift exists as a searchable, complete record. Not because you sat down to write a report. Because the report wrote itself, one button press at a time.</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- Why this matters at all -->
+<section class="section band">
+  <div class="container">
+    <div class="section-head">
+      <span class="eyebrow">Step back</span>
+      <h2>So what did the worker actually get out of this?</h2>
+      <p class="lead">Three things that matter more than any single button.</p>
+    </div>
+
+    <div class="why-it-matters">
+      <div class="why-card">
+        <div class="ic">01 · TIME</div>
+        <h4>Hours back per shift</h4>
+        <p>Every interaction that used to involve walking to a workstation, unlocking a phone, or filling out paper now takes 2–5 seconds. Across a full shift, that's hours of reclaimed work time — and hours of reclaimed evening.</p>
+      </div>
+      <div class="why-card">
+        <div class="ic">02 · MEMORY</div>
+        <h4>Nothing falls through the cracks</h4>
+        <p>The slow leak on valve B7 is documented. The gasket order exists in writing. The pressure transducer's calibration date is on file. The supervisor knows. The next shift knows. The auditor at the end of the quarter knows.</p>
+      </div>
+      <div class="why-card">
+        <div class="ic">03 · SAFETY</div>
+        <h4>Help arrives faster, with better info</h4>
+        <p>The SOS button is not just a panic button — it's a structured emergency that brings the right people to the right place with photos already on their screen before they even pick up the phone. That's the difference between minutes and seconds when seconds matter.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Final CTA -->
+<section class="section tight">
+  <div class="container">
+    <div class="card" style="text-align:center; padding: 3rem 2rem;">
+      <h2 style="margin-bottom: 0.4em;">Now that you've seen the day…</h2>
+      <p class="lead" style="margin: 0 auto 1.2rem;">Curious how each button works under the hood, or what hardware makes this possible?</p>
+      <div class="btn-row" style="justify-content: center;">
+        <a href="the-six-buttons" class="btn btn-primary">The six buttons in depth →</a>
+        <a href="hardware" class="btn btn-ghost">See the hardware</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script src="../assets/chatbot.js"></script>
+<script src="../assets/nav.js"></script>
+<script>document.addEventListener('DOMContentLoaded', () => window.VL.mount({ active: 'how', lang: 'en' }));</script>
+</body>
+</html>

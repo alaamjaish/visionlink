@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>VisionLink — Internal Team Guide (5 pages)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* =================================================================
+     VisionLink — Internal Team Guide
+     One artefact, 5 pages of A4. Print to PDF in Chrome / Edge:
+       Ctrl+P → "Save as PDF" → A4, Default margins OFF (use page CSS),
+       Background graphics: ON.
+     ================================================================= */
+
+  @page { size: A4; margin: 12mm 12mm 16mm 12mm; }
+
+  * { box-sizing: border-box; }
+  html, body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    color: #0f172a;
+    line-height: 1.55;
+    font-size: 9.8pt;
+    margin: 0;
+    padding: 0;
+    background: #ffffff;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---- COVER (page 1, top half) ---- */
+  .cover {
+    height: 130mm;
+    background:
+      radial-gradient(ellipse at top right, rgba(245, 201, 91, 0.18), transparent 55%),
+      radial-gradient(ellipse at bottom left, rgba(56, 189, 248, 0.20), transparent 55%),
+      linear-gradient(160deg, #0b1220 0%, #111c2e 55%, #1a2540 100%);
+    color: #fff;
+    padding: 20mm 16mm 14mm;
+    position: relative;
+    overflow: hidden;
+    margin: 0 -4mm;
+    border-radius: 4mm;
+  }
+  .cover::before {
+    content: "";
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(to right, rgba(255,255,255,0.04) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255,255,255,0.04) 1px, transparent 1px);
+    background-size: 28px 28px;
+    mask-image: radial-gradient(ellipse at center, #000 30%, transparent 75%);
+    -webkit-mask-image: radial-gradient(ellipse at center, #000 30%, transparent 75%);
+    pointer-events: none;
+  }
+  .cover .top {
+    display: flex; justify-content: space-between; align-items: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 7.5pt;
+    color: #94a3b8;
+    letter-spacing: 1.4px;
+    text-transform: uppercase;
+    position: relative;
+  }
+  .cover .top .logo {
+    display: inline-flex; align-items: center; gap: 6px;
+    color: #f5c95b; font-weight: 700;
+  }
+  .cover .top .dot {
+    width: 7px; height: 7px; background: #f5c95b; border-radius: 50%;
+    box-shadow: 0 0 12px rgba(245,201,91,0.7);
+  }
+  .cover .kicker {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 8pt;
+    letter-spacing: 2.6px;
+    color: #f5c95b;
+    text-transform: uppercase;
+    font-weight: 600;
+    margin: 14mm 0 5mm;
+  }
+  .cover h1 {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 48pt;
+    font-weight: 700;
+    line-height: 0.98;
+    letter-spacing: -2px;
+    margin: 0 0 4mm;
+    color: #fff;
+  }
+  .cover h1 .accent { color: #f5c95b; }
+  .cover .sub {
+    font-size: 12pt;
+    color: #cbd5e1;
+    line-height: 1.4;
+    max-width: 120mm;
+    margin: 0 0 6mm;
+  }
+  .cover .meta {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6mm;
+    margin-top: auto;
+    padding-top: 6mm;
+    border-top: 1px solid rgba(148,163,184,0.25);
+  }
+  .cover .meta .lbl {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 6.8pt;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    margin-bottom: 2mm;
+  }
+  .cover .meta .val {
+    font-size: 9pt;
+    font-weight: 600;
+    color: #fff;
+  }
+
+  /* ---- PAGES ---- */
+  .page {
+    page-break-before: always;
+    padding-top: 4mm;
+  }
+  .page:first-of-type { page-break-before: auto; padding-top: 0; }
+
+  /* ---- HEADINGS ---- */
+  h1.chap {
+    display: flex; align-items: baseline; gap: 10px;
+    margin: 0 0 5mm 0;
+    padding-bottom: 3mm;
+    border-bottom: 2px solid #0f172a;
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.4px;
+  }
+  h1.chap .num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9pt;
+    font-weight: 700;
+    color: #fff;
+    background: #0f172a;
+    padding: 1.5mm 2.5mm;
+    border-radius: 3px;
+    letter-spacing: 1px;
+  }
+  h1.chap .title { font-size: 18pt; color: #0f172a; line-height: 1.15; }
+
+  h2 {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 11.5pt;
+    font-weight: 700;
+    color: #0f172a;
+    margin: 5mm 0 2mm;
+    letter-spacing: -0.2px;
+  }
+  h3 {
+    font-size: 9.5pt;
+    font-weight: 700;
+    color: #0f172a;
+    margin: 3mm 0 1.5mm;
+  }
+  p { margin: 0 0 2.5mm; color: #1e293b; }
+
+  ul, ol { margin: 0 0 2.5mm; padding-left: 5mm; }
+  li { margin-bottom: 1mm; color: #1e293b; }
+  ul li::marker { color: #f59e0b; }
+  ol li::marker { color: #f59e0b; font-weight: 700; }
+
+  strong { color: #0f172a; font-weight: 700; }
+  em { color: #334155; font-style: italic; }
+
+  code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 8pt;
+    background: #f1f5f9;
+    color: #0f172a;
+    padding: 0.4mm 1.4mm;
+    border-radius: 2.5px;
+    border: 1px solid #e2e8f0;
+    white-space: nowrap;
+  }
+
+  /* ---- TABLES ---- */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 2mm 0 3mm;
+    font-size: 8.6pt;
+    border: 1px solid #e2e8f0;
+    border-radius: 3px;
+    overflow: hidden;
+    page-break-inside: avoid;
+  }
+  thead { background: #0f172a; }
+  th {
+    color: #fff;
+    font-weight: 600;
+    text-align: left;
+    padding: 1.8mm 2.4mm;
+    border-right: 1px solid #1e293b;
+    font-size: 8.4pt;
+  }
+  th:last-child { border-right: none; }
+  td {
+    padding: 1.6mm 2.4mm;
+    border-top: 1px solid #e2e8f0;
+    border-right: 1px solid #f1f5f9;
+    color: #1e293b;
+    vertical-align: top;
+  }
+  td:last-child { border-right: none; }
+  tbody tr:nth-child(even) { background: #f8fafc; }
+  td code { font-size: 7.6pt; }
+
+  /* ---- COLUMNS ---- */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5mm;
+  }
+
+  /* ---- CALLOUTS ---- */
+  .callout {
+    background: #fffbeb;
+    border-left: 3px solid #f59e0b;
+    padding: 2.5mm 3.5mm;
+    margin: 2.5mm 0;
+    color: #78350f;
+    border-radius: 0 3px 3px 0;
+    font-size: 8.8pt;
+    page-break-inside: avoid;
+  }
+  .callout strong { color: #78350f; }
+
+  /* ---- BUTTON CARDS (page 2) ---- */
+  .buttons-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 3mm;
+    margin-top: 2mm;
+  }
+  .b-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    padding: 3mm 3.5mm;
+    background: linear-gradient(180deg, #fafcff 0%, #ffffff 100%);
+    page-break-inside: avoid;
+  }
+  .b-card .b-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 1.5mm;
+    border-bottom: 1px dashed #e2e8f0;
+    padding-bottom: 1.5mm;
+  }
+  .b-card .b-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 7.4pt;
+    font-weight: 700;
+    color: #f59e0b;
+    letter-spacing: 1px;
+  }
+  .b-card .b-name {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 10.5pt;
+    font-weight: 700;
+    color: #0f172a;
+  }
+  .b-card .b-pin {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 6.8pt;
+    color: #64748b;
+    background: #f1f5f9;
+    padding: 0.3mm 1.4mm;
+    border-radius: 2px;
+  }
+  .b-card .b-desc { font-size: 8.4pt; color: #1e293b; margin: 0; line-height: 1.45; }
+  .b-card .b-gestures {
+    margin-top: 1.5mm; display: flex; flex-wrap: wrap; gap: 1.4mm;
+  }
+  .b-card .g-tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 6.8pt;
+    background: #eff6ff;
+    color: #1d4ed8;
+    padding: 0.5mm 1.4mm;
+    border-radius: 2px;
+    border: 1px solid #dbeafe;
+  }
+  .b-card .g-tag.red { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+  .b-card .g-tag.gold { background: #fffbeb; color: #92400e; border-color: #fde68a; }
+  .b-card.sos { border-color: #fecaca; background: linear-gradient(180deg, #fef2f2 0%, #ffffff 100%); }
+
+  /* ---- DIAGRAM ---- */
+  .ascii {
+    background: #0f172a;
+    color: #cbd5e1;
+    padding: 3mm 4mm;
+    border-radius: 4px;
+    border-left: 3px solid #f5c95b;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 7.4pt;
+    line-height: 1.45;
+    white-space: pre;
+    overflow: hidden;
+    margin: 2mm 0 3mm;
+  }
+
+  /* ---- KPI ROW ---- */
+  .kpis {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 3mm;
+    margin: 3mm 0;
+  }
+  .kpi {
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    padding: 2.5mm 2.5mm;
+    text-align: center;
+  }
+  .kpi .num {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 18pt;
+    font-weight: 700;
+    color: #0369a1;
+    letter-spacing: -0.5px;
+    line-height: 1;
+  }
+  .kpi .lbl {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 6.6pt;
+    color: #64748b;
+    margin-top: 1mm;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+  }
+
+  /* ---- DEMO STORYLINE ---- */
+  .story {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    padding: 3.5mm 4mm;
+    font-size: 8.8pt;
+    margin: 2mm 0 3mm;
+  }
+  .story strong { color: #0369a1; }
+  .story .turn { margin-bottom: 2mm; }
+
+  /* ---- TEAM ---- */
+  .team-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 3mm;
+    margin-top: 2mm;
+  }
+  .team-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    padding: 2.5mm 3mm;
+    page-break-inside: avoid;
+  }
+  .team-card .role {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 6.8pt;
+    color: #f59e0b;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    margin-bottom: 0.8mm;
+  }
+  .team-card .name {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 10.5pt;
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 1mm;
+  }
+  .team-card p { font-size: 8.4pt; margin: 0; }
+
+  /* ---- FOOTER STRIP ---- */
+  .colophon {
+    text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 7.4pt;
+    color: #94a3b8;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    padding-top: 4mm;
+    margin-top: 5mm;
+    border-top: 1px solid #e2e8f0;
+  }
+</style>
+</head>
+<body>
+
+<!-- ============================================
+     PAGE 1 — COVER + EXECUTIVE SUMMARY
+     ============================================ -->
+<section class="page">
+  <div class="cover">
+    <div class="top">
+      <span class="logo"><span class="dot"></span>VISIONLINK</span>
+      <span>INTERNAL GUIDE / V1.0 / 2026</span>
+    </div>
+    <div class="kicker">Graduation Project · Internal Team Guide</div>
+    <h1>Vision<span class="accent">Link.</span></h1>
+    <p class="sub">A wearable industrial assistant on Raspberry Pi 4B — five pages, written so any of us can speak about the whole project without re-reading the code.</p>
+    <div class="meta">
+      <div><div class="lbl">Platform</div><div class="val">Raspberry Pi 4B</div></div>
+      <div><div class="lbl">Team</div><div class="val">Alaa · Ali · Alaa · Defne</div></div>
+      <div><div class="lbl">Course</div><div class="val">EEE492 · Spring 2026</div></div>
+      <div><div class="lbl">Repo</div><div class="val">alaamjaish/visionlink</div></div>
+    </div>
+  </div>
+
+  <h2 style="margin-top: 8mm;">What VisionLink is — in 90 seconds</h2>
+  <p>VisionLink is a wearable industrial assistant for factory workers. A Raspberry Pi 4B, a Pi Camera 3, an I²S microphone + amplifier, an 8 Ω speaker, six tactile push-buttons, and a 10 000 mAh power bank — clipped to a hard hat or worn on a chest strap. The total parts cost is under €120.</p>
+  <p>The worker drives the device with six buttons within reach. Three buttons handle <strong>documentation</strong> (open a shift session, snap a photo or short video, record a voice note). Three buttons handle <strong>AI assistance</strong> (talk to a cloud AI through the speaker, add the camera, or trigger a one-press emergency SOS). Everything captured streams to a Supabase Postgres database in ~200 ms, and a supervisor watches the activity in real time on a Next.js dashboard.</p>
+
+  <div class="kpis">
+    <div class="kpi"><div class="num">6</div><div class="lbl">buttons</div></div>
+    <div class="kpi"><div class="num">3</div><div class="lbl">AI providers</div></div>
+    <div class="kpi"><div class="num">11</div><div class="lbl">live panels</div></div>
+    <div class="kpi"><div class="num">&lt;2.5s</div><div class="lbl">voice → AI</div></div>
+    <div class="kpi"><div class="num">~€110</div><div class="lbl">prototype BOM</div></div>
+  </div>
+
+  <h2>Why it exists</h2>
+  <p>Industrial work in 2026 still depends heavily on memory, paper, and radios. A maintenance technician encounters a non-trivial problem perhaps once an hour — an unfamiliar part, a fault code, a leak that needs reporting. Each interaction follows the same pattern: stop, walk to a workstation, describe verbally, wait, walk back. Three failure modes recur — <strong>knowledge that does not transfer</strong> when senior workers retire, <strong>emergencies that are slow and confused</strong> because injured workers cannot reliably operate phones, and <strong>reporting that is ad-hoc</strong> and never reaches the analytics layer. VisionLink targets all three: it is wearable so hands stay on the work, voice-first because typing is incompatible with PPE-gloved hands, and always-uploading because the value of a captured shift is only realised when the supervisor and the analytics layer can see it.</p>
+
+  <div class="callout">
+    <strong>One sentence we keep coming back to:</strong> electrical correctness is necessary but not sufficient — the wearable lives or dies on whether a worker in welding gloves can reach a button, and whether the AI actually called the tool when it claimed to.
+  </div>
+</section>
+
+<!-- ============================================
+     PAGE 2 — THE SIX BUTTONS
+     ============================================ -->
+<section class="page">
+  <h1 class="chap"><span class="num">02</span><span class="title">The Six Buttons</span></h1>
+
+  <p>Each button is a falling-edge GPIO interrupt on the Pi. <code>scripts/gpio_bridge.py</code> debounces (20 ms LOW + 40 ms HIGH), classifies the gesture (single / double / hold), and POSTs <code>/api/button/&lt;n&gt;/&lt;event&gt;</code> to the FastAPI dashboard. The dashboard's six async handlers do everything from there.</p>
+
+  <div class="buttons-grid">
+    <div class="b-card">
+      <div class="b-head">
+        <div><div class="b-num">B1</div><div class="b-name">Documentation Session</div></div>
+        <span class="b-pin">GPIO 23 · Pin 16</span>
+      </div>
+      <p class="b-desc">Toggles a shift session in Supabase. Every photo, video, and voice note captured while it is open is grouped under the same <code>session_id</code>.</p>
+      <div class="b-gestures">
+        <span class="g-tag">Single — open</span>
+        <span class="g-tag">Single again — close</span>
+      </div>
+    </div>
+
+    <div class="b-card">
+      <div class="b-head">
+        <div><div class="b-num">B2</div><div class="b-name">Photo / Video</div></div>
+        <span class="b-pin">GPIO 25 · Pin 22</span>
+      </div>
+      <p class="b-desc">Single press snaps a 1280×720 JPEG. Double press records a 5-second MP4. Both upload to the Supabase storage bucket and appear on the dashboard.</p>
+      <div class="b-gestures">
+        <span class="g-tag">Single — photo</span>
+        <span class="g-tag">Double — 5s video</span>
+      </div>
+    </div>
+
+    <div class="b-card">
+      <div class="b-head">
+        <div><div class="b-num">B3</div><div class="b-name">Voice Note</div></div>
+        <span class="b-pin">GPIO 22 · Pin 15</span>
+      </div>
+      <p class="b-desc">Press to start recording, press again to stop. PCM 16 kHz from the I²S mic is wrapped in a WAV header and uploaded to the session.</p>
+      <div class="b-gestures">
+        <span class="g-tag">Press → record</span>
+        <span class="g-tag">Press → upload</span>
+      </div>
+    </div>
+
+    <div class="b-card">
+      <div class="b-head">
+        <div><div class="b-num">B4</div><div class="b-name">AI Voice Agent</div></div>
+        <span class="b-pin">GPIO 5 · Pin 29</span>
+      </div>
+      <p class="b-desc">Bidirectional voice session with Gemini Live (default) or OpenAI Realtime. AI hears, replies through the speaker, calls six live tools.</p>
+      <div class="b-gestures">
+        <span class="g-tag">Single — start</span>
+        <span class="g-tag">Double — stop</span>
+      </div>
+    </div>
+
+    <div class="b-card">
+      <div class="b-head">
+        <div><div class="b-num">B5</div><div class="b-name">AI Voice + Vision</div></div>
+        <span class="b-pin">GPIO 6 · Pin 31</span>
+      </div>
+      <p class="b-desc">Same as B4 but with the camera attached. Default mode is snap-on-press: each B5 single press injects a fresh JPEG into the AI conversation.</p>
+      <div class="b-gestures">
+        <span class="g-tag">Single — start / snap</span>
+        <span class="g-tag">Double — stop</span>
+      </div>
+    </div>
+
+    <div class="b-card sos">
+      <div class="b-head">
+        <div><div class="b-num" style="color:#dc2626;">B6 · SOS</div><div class="b-name">Panic Mode</div></div>
+        <span class="b-pin">GPIO 13 · Pin 33</span>
+      </div>
+      <p class="b-desc">Double-press arms full SOS. Single press is a pocket-dial warning toast. Emails the safety officer, opens a calm AI session, auto-snaps a frame every 10 s.</p>
+      <div class="b-gestures">
+        <span class="g-tag gold">Single — warning</span>
+        <span class="g-tag red">Double — armed</span>
+      </div>
+    </div>
+  </div>
+
+  <h2>SOS flow — the most complex thing in the codebase</h2>
+  <p>When the SOS is armed: <strong>(1)</strong> a row is inserted into <code>sos_events</code>; <strong>(2)</strong> a fire-and-forget task emails the safety officer via Gmail SMTP using the internal <code>send_report</code> tool with role <code>"safety officer"</code>; <strong>(3)</strong> any open B1 session is auto-closed; <strong>(4)</strong> an emergency AI session opens (Gemini by default, OpenAI <code>gpt-realtime-2</code> fallback with the warm <code>"marin"</code> voice); <strong>(5)</strong> the AI opens the call first — <em>"Alaa, I'm here with you. Help is on the way. Are you hurt? Where are you?"</em>; <strong>(6)</strong> camera frames auto-snap every <code>sos_photo_interval_s</code> (default 10 s, 4 s on OpenAI), upload to <code>sos/&lt;id&gt;/frame_&lt;ts&gt;.jpg</code>, and inject into the AI session; <strong>(7)</strong> the live transcript streams into <code>sos_events.live_transcript</code>; <strong>(8)</strong> the supervisor's <code>SosPanel</code> turns red and pulses; <strong>(9)</strong> a red SHUT OFF button flips <code>resolved=true</code> — the wearable polls every 2 s and tears down within ~2 s; <strong>(10)</strong> a hard timeout auto-resolves after <code>sos_max_duration_s</code> (default 600 s).</p>
+
+  <div class="callout"><strong>What we'll never cut:</strong> voice agent fires tools reliably ✓; six buttons all do something useful ✓; email actually arrives in the supervisor's inbox during demo ✓; ops dashboard updates in real time on a second screen ✓.</div>
+</section>
+
+<!-- ============================================
+     PAGE 3 — HARDWARE
+     ============================================ -->
+<section class="page">
+  <h1 class="chap"><span class="num">03</span><span class="title">The Hardware</span></h1>
+
+  <p>Off-the-shelf consumer parts. A Raspberry Pi 4B does all the real-time control locally; the cloud handles persistence and the AI. The wearable plus its 10 000 mAh USB-C power bank weighs under 300 g and fits on a hard-hat strap.</p>
+
+  <h2>Components</h2>
+  <table>
+    <thead><tr><th>Component</th><th>Model</th><th>Role</th><th>Connection</th></tr></thead>
+    <tbody>
+      <tr><td>Computer</td><td>Raspberry Pi 4B (8 GB)</td><td>Brain. All real-time control.</td><td>USB-C 5 V / 3 A</td></tr>
+      <tr><td>Camera</td><td>Pi Camera Module 3</td><td>Photos, videos, AI vision frames</td><td>CSI ribbon</td></tr>
+      <tr><td>Microphone</td><td>SPH0645LM4H I²S MEMS</td><td>Voice input</td><td>I²S — GPIO 18/19/20</td></tr>
+      <tr><td>Amplifier</td><td>MAX98357A I²S Class-D</td><td>Speaker driver</td><td>I²S — GPIO 18/19/21</td></tr>
+      <tr><td>Speaker</td><td>8 Ω 1 W oval (Adafruit-style)</td><td>Audio output</td><td>Screw terminals on amp</td></tr>
+      <tr><td>Buttons</td><td>6 × 12 mm tactile push</td><td>Worker input</td><td>GPIO 5, 6, 13, 22, 23, 25</td></tr>
+      <tr><td>Power</td><td>10 000 mAh USB-C PD bank</td><td>Mobile power</td><td>USB-C</td></tr>
+      <tr><td>Mount</td><td>3D-printed PLA + helmet bracket</td><td>Wearable form</td><td>M3 hardware</td></tr>
+    </tbody>
+  </table>
+
+  <h2>GPIO pin map (BCM)</h2>
+  <table>
+    <thead><tr><th>Function</th><th>BCM</th><th>Pin</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td>B1 — Doc Session</td><td>23</td><td>16</td><td>Falling edge, internal pull-up</td></tr>
+      <tr><td>B2 — Photo / Video</td><td>25</td><td>22</td><td>Falling edge, internal pull-up</td></tr>
+      <tr><td>B3 — Voice Note</td><td>22</td><td>15</td><td>Falling edge, internal pull-up</td></tr>
+      <tr><td>B4 — AI Voice</td><td>5</td><td>29</td><td>Falling edge, internal pull-up</td></tr>
+      <tr><td>B5 — AI Voice + Vision</td><td>6</td><td>31</td><td>Falling edge, internal pull-up</td></tr>
+      <tr><td>B6 — SOS</td><td>13</td><td>33</td><td>Falling edge, internal pull-up</td></tr>
+      <tr><td>Mic + Amp BCLK (shared)</td><td>18</td><td>12</td><td>I²S bit clock</td></tr>
+      <tr><td>Mic + Amp LRCLK (shared)</td><td>19</td><td>35</td><td>I²S word-select clock</td></tr>
+      <tr><td>Mic DOUT</td><td>20</td><td>38</td><td>Mic audio bits</td></tr>
+      <tr><td>Amp DIN</td><td>21</td><td>40</td><td>Amp audio bits</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Wiring philosophy</h2>
+  <p>Each button is wired between its GPIO pin and ground. Pressing shorts the pin to ground; the Pi's internal pull-up detects a falling edge. The microphone and amplifier share the same I²S clock lines (BCLK + LRCLK) but have separate data lines — so all audio runs on four wires plus power and ground. Total wiring fits comfortably on a single breadboard during prototyping.</p>
+
+  <h2>Cost — TRY (May 2026, 1 USD ≈ 45.4 TRY)</h2>
+  <table>
+    <thead><tr><th>Line</th><th style="text-align:right;">Prototype (TRY)</th><th style="text-align:right;">At 1 K MOQ (TRY)</th></tr></thead>
+    <tbody>
+      <tr><td>SBC (Pi 4B / CM4 Lite)</td><td style="text-align:right;">4 985</td><td style="text-align:right;">2 000</td></tr>
+      <tr><td>Camera</td><td style="text-align:right;">1 665</td><td style="text-align:right;">600</td></tr>
+      <tr><td>Mic + amp + speaker</td><td style="text-align:right;">1 114</td><td style="text-align:right;">250</td></tr>
+      <tr><td>Power (bank / cells)</td><td style="text-align:right;">2 000</td><td style="text-align:right;">600</td></tr>
+      <tr><td>Buttons + wiring + storage</td><td style="text-align:right;">578</td><td style="text-align:right;">200</td></tr>
+      <tr><td>Enclosure + mount + cooling</td><td style="text-align:right;">670</td><td style="text-align:right;">210</td></tr>
+      <tr><td>Assembly + test + certification</td><td style="text-align:right;">—</td><td style="text-align:right;">330</td></tr>
+      <tr><td>Shipping / KDV slack</td><td style="text-align:right;">555</td><td style="text-align:right;">—</td></tr>
+      <tr style="background:#fffbeb;"><td><strong>Total</strong></td><td style="text-align:right;"><strong>≈ 11 657 (~$257)</strong></td><td style="text-align:right;"><strong>≈ 4 190 (~$92)</strong></td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout"><strong>Recurring per-worker cloud cost:</strong> ≈ 9 500 TRY/month (~$209), dominated by OpenAI Realtime audio (~$165 of that). Cutting active voice to 30 min/day drops it to ~$95/month. The realtime audio API decides whether per-seat pricing works.</div>
+</section>
+
+<!-- ============================================
+     PAGE 4 — SOFTWARE + AI
+     ============================================ -->
+<section class="page">
+  <h1 class="chap"><span class="num">04</span><span class="title">Software, AI, and the Dashboards</span></h1>
+
+  <h2>Three processes on the Pi</h2>
+  <p>Independent processes give isolation: a crash in one cannot kill the others. <code>audio_worker</code> is a subprocess of the FastAPI dashboard, so a C-level ALSA assertion crashes only the worker — the parent restarts it within ~1.5 s.</p>
+
+  <div class="ascii">┌──────────────────────────────────────────────────────────────────┐
+│  CLOUD                                                           │
+│  Supabase (Postgres + Storage + Realtime)                        │
+│  Google Gemini · OpenAI · Gmail SMTP                             │
+└──────────────────────────────────────────────────────────────────┘
+              ▲   HTTPS · WebSocket · Realtime
+┌──────────────────────────────────────────────────────────────────┐
+│  RASPBERRY PI 4B (LOCAL EDGE)                                    │
+│  GPIO Bridge → FastAPI Dashboard (:8000) → audio_worker          │
+│  Next.js Ops Dashboard (:3000)                                   │
+└──────────────────────────────────────────────────────────────────┘
+              ▲   GPIO · CSI · I²S
+┌──────────────────────────────────────────────────────────────────┐
+│  PHYSICAL WEARABLE                                               │
+│  6 buttons · Pi Camera 3 · I²S MEMS mic · I²S amp + speaker      │
+└──────────────────────────────────────────────────────────────────┘</div>
+
+  <div class="two-col">
+    <div>
+      <h2>The stack</h2>
+      <ul>
+        <li><strong>FastAPI + Uvicorn</strong> — async Python HTTP/WebSocket server (dashboard/server.py, ~1 800 lines)</li>
+        <li><strong>Next.js 16 + React 19 + Tailwind 4</strong> — supervisor ops dashboard (ops/, port 3000)</li>
+        <li><strong>Supabase</strong> — managed Postgres + Storage + Realtime, used by both Python (supabase-py) and the browser (@supabase/supabase-js)</li>
+        <li><strong>picamera2</strong> — modern Pi Camera library with hardware MMAL acceleration</li>
+        <li><strong>RPi.GPIO + lgpio + gpiozero</strong> — falling-edge GPIO with debounce</li>
+        <li><strong>sounddevice + custom AudioBridge</strong> — low-latency I²S audio path, half-duplex mic muting during TTS (no AEC)</li>
+        <li><strong>google-genai SDK + OpenAI SDK</strong> — bidirectional streaming voice + vision</li>
+        <li><strong>smtplib (Gmail) / resend</strong> — email delivery, Gmail by default</li>
+      </ul>
+    </div>
+
+    <div>
+      <h2>AI providers (currently configured)</h2>
+      <ul>
+        <li><strong>Gemini Live</strong> — <code>gemini-3.1-flash-live-preview</code> for streaming voice + vision. Default for B4, B5, SOS.</li>
+        <li><strong>Gemini text/vision fallback</strong> — <code>gemini-2.5-flash</code></li>
+        <li><strong>OpenAI Realtime</strong> — <code>gpt-realtime-2</code>. Voice <code>"marin"</code> for the SOS path, <code>reasoning_effort="medium"</code>, output speed 1.2×.</li>
+        <li><strong>Site chatbot</strong> — <code>gemini-3.5-flash</code> (released 2026-05-19 at Google I/O 2026, $1.50/$9 per 1 M tokens, 1 M-token context)</li>
+        <li><strong>Anthropic Claude (planned)</strong> — wired but disabled; targeted for email drafting</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>The six AI tools (shared by Gemini and OpenAI sessions)</h2>
+  <table>
+    <thead><tr><th>#</th><th>Tool</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><code>lookup_component(query)</code></td><td>Search components catalog by part_code (exact) then name (fuzzy). Returns ≤3 rows.</td></tr>
+      <tr><td>2</td><td><code>log_incident(description, category?, severity?, location?)</code></td><td>Insert into <code>incidents</code>. Categories: safety/equipment/leak/damage/other. Severities: low/medium/high/critical.</td></tr>
+      <tr><td>3</td><td><code>mark_task_complete(task_query)</code></td><td>Fuzzy-match pending tasks. Returns <code>ambiguous=true</code> with options when multiple match.</td></tr>
+      <tr><td>4</td><td><code>get_my_assignments(include_complete?)</code></td><td>List worker tasks, ordered by priority then due date.</td></tr>
+      <tr><td>5</td><td><code>request_part(part_query, quantity?, urgency?, reason?)</code></td><td>Submit to <code>part_requests</code>. Auto-matches against components.</td></tr>
+      <tr><td>6</td><td><code>send_report(report_name, recipient_role?, recipient_name?, recipient_email?, custom_message?)</code></td><td>Find template + recipient → inject live data → Gmail SMTP send → audit-log to <code>sent_reports</code>.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout"><strong>Three absolute rules</strong> in the system prompt: (1) <strong>Never lie about completing actions</strong> — completion phrases require an actual tool call; (2) <strong>Verb triggers</strong> — <em>log, mark, send, request</em> fire the matching tool immediately; (3) <strong>One clarifying question max</strong> — commit with reasonable defaults instead of stalling.</div>
+
+  <h2>The 11 Ops Dashboard panels</h2>
+  <div class="two-col">
+    <div>
+      <p style="margin: 0 0 1mm;"><strong>/ (Command Center) — 9 panels:</strong></p>
+      <ul style="font-size: 8.6pt;">
+        <li><code>SosPanel</code> — live alarm + shutdown</li>
+        <li><code>WearableSettingsPanel</code> — remote config</li>
+        <li><code>IncidentsPanel</code> — safety/equipment logs</li>
+        <li><code>TasksPanel</code> — worker tasks</li>
+        <li><code>PartsPanel</code> — part requests</li>
+        <li><code>ComponentsPanel</code> — parts catalog</li>
+        <li><code>ManagersPanel</code> — supervisor directory</li>
+        <li><code>ReportTemplatesPanel</code> — email templates</li>
+        <li><code>SentReportsPanel</code> — email audit trail</li>
+      </ul>
+    </div>
+    <div>
+      <p style="margin: 0 0 1mm;"><strong>/documentation — 2 panels:</strong></p>
+      <ul style="font-size: 8.6pt;">
+        <li><code>SessionsPanel</code> — shifts, durations, per-kind counts</li>
+        <li><code>CapturesPanel</code> — tabbed grid (All / Photos / Videos / Voice notes / Orphans)</li>
+      </ul>
+      <p style="margin: 1.5mm 0 0;"><strong>Database tables:</strong> <code>components</code>, <code>worker_tasks</code>, <code>incidents</code>, <code>part_requests</code>, <code>managers</code>, <code>report_templates</code>, <code>sent_reports</code>, <code>sessions</code>, <code>session_assets</code>, <code>sos_events</code>, <code>wearable_settings</code>.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================
+     PAGE 5 — DEMO + TEAM + NUMBERS
+     ============================================ -->
+<section class="page">
+  <h1 class="chap"><span class="num">05</span><span class="title">The Demo, the Team, and the Numbers</span></h1>
+
+  <h2>Demo storyline</h2>
+  <p>One worker, one supervisor, one wearable, one screen. The demo runs ~3 minutes and is built to land four distinct moments.</p>
+
+  <div class="story">
+    <div class="turn"><strong>Moment 1 — Lookup that works.</strong> Worker presses <strong>B4</strong>. <em>"What's the torque spec on the gearbox M8 bolts?"</em> Wearable replies in ~1.2 s with the exact value from the components table. The tool-fired badge lights up on the voice-command-center screen.</div>
+    <div class="turn"><strong>Moment 2 — The AI sees.</strong> Worker presses <strong>B5</strong> and points at a QR-tagged part. <em>"What is this and when was it last maintained?"</em> The AI describes the part from the live camera frame and reads its maintenance record.</div>
+    <div class="turn"><strong>Moment 3 — Email arrives.</strong> Worker presses <strong>B4</strong> again. <em>"Send an email to the supervisor saying we completed the pump A3 inspection today, found two minor leaks on valve B7, and need replacement gaskets by Friday."</em> The wearable says <em>"One sec, drafting that now…"</em> — pause ~4 s — <em>"Email sent to Mr. Acharya."</em> The supervisor's inbox pings live on the second screen.</div>
+    <div class="turn"><strong>Moment 4 — SOS.</strong> Worker double-clicks <strong>B6</strong>. The supervisor's <code>SosPanel</code> turns red and pulses. A live AI conversation begins: <em>"Alaa, I'm here with you. Help is on the way."</em> Frames auto-snap every 10 s. The supervisor hits SHUT OFF. The wearable falls silent in ~2 s.</div>
+  </div>
+
+  <h2>Performance numbers we can quote</h2>
+  <table>
+    <thead><tr><th>Path</th><th>Mean</th><th>How measured</th></tr></thead>
+    <tbody>
+      <tr><td>Button press → handler</td><td>35 ms</td><td>20 trials</td></tr>
+      <tr><td>AI request → first audio token (Gemini Live)</td><td>0.9 s</td><td>20 trials</td></tr>
+      <tr><td>AI request → first audio token (OpenAI Realtime)</td><td>0.7 s</td><td>20 trials</td></tr>
+      <tr><td>Single tool round-trip</td><td>180 ms</td><td>per-tool integration test</td></tr>
+      <tr><td>Photo → Supabase URL ready</td><td>1.4 s</td><td>stopwatch</td></tr>
+      <tr><td>SOS trigger → email in inbox</td><td>4.2 s</td><td>10 trials</td></tr>
+      <tr><td>Supervisor shutoff → wearable teardown</td><td>1.8 s</td><td>10 trials</td></tr>
+      <tr><td>6-hour soak — misclassification rate</td><td>0.93 %</td><td>1 184 events</td></tr>
+      <tr><td>6-hour soak — clean AI session close</td><td>100 % (38 / 38)</td><td>synthetic load</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Team</h2>
+  <div class="team-grid">
+    <div class="team-card">
+      <div class="role">Software</div>
+      <div class="name">Alaa Abo Jeesh</div>
+      <p>Software architecture, FastAPI backend, AI integration (Gemini Live + OpenAI Realtime), the tool-calling layer, and the Next.js ops dashboard. System prompts and soak-test design.</p>
+    </div>
+    <div class="team-card">
+      <div class="role">Software</div>
+      <div class="name">Ali Salih Yıldırım</div>
+      <p>Software development. Co-built the wearable's Python runtime and the supervisor dashboard. Integration testing of the voice and tool-calling paths.</p>
+    </div>
+    <div class="team-card">
+      <div class="role">Hardware + Testing</div>
+      <div class="name">Alaa Ali</div>
+      <p>Hardware integration (Pi assembly, I²S wiring, button matrix), 3D-printed enclosure and helmet bracket, audio path bring-up, and end-to-end acceptance testing of every button.</p>
+    </div>
+    <div class="team-card">
+      <div class="role">Hardware + Testing</div>
+      <div class="name">Fatma Defne Dolaz</div>
+      <p>Hardware integration and helmet-mount fit-up, soak-test execution, end-to-end acceptance testing, and demo-day preparation. Requirements traceability across EEE491 → EEE492.</p>
+    </div>
+  </div>
+
+  <h2>Open questions to lock in before demo</h2>
+  <ul>
+    <li>Which exact teacher email goes into the <code>managers</code> row for "supervisor" and "safety officer"?</li>
+    <li>Which QR-tagged components are printed on the demo poster (which <code>part_codes</code>)?</li>
+    <li>Demo audio routing — are we using the wearable's speaker or a Bluetooth speaker for jury audibility?</li>
+    <li>Battery — does the 10 000 mAh bank survive the full 30-minute jury slot under sustained AI streaming?</li>
+    <li>Network — is the demo room on a Wi-Fi the Pi has been onboarded to, or do we need to bring our own hotspot?</li>
+  </ul>
+
+  <div class="colophon">VisionLink · EEE492 · Gazi University · alaamjaish/visionlink</div>
+</section>
+
+</body>
+</html>
