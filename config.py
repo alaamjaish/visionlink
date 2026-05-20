@@ -58,8 +58,8 @@ AUDIO_ARECORD_FORMAT = os.getenv("AUDIO_ARECORD_FORMAT", "S16_LE")
 
 # === Buttons (BCM GPIO pin numbers) ===
 # Documentation mode
-BTN_SESSION = 17       # Button 1: Start/Stop session
-BTN_PHOTO_VIDEO = 27   # Button 2: Photo (single) / Video (double)
+BTN_SESSION = 23       # Button 1: Start/Stop session  (moved from GPIO 17 → GPIO 23 / Pin 16, breadboard conflict 2026-05-08)
+BTN_PHOTO_VIDEO = 25   # Button 2 / Visual: Photo (single) / Video (double). Moved 27→25 (Pin 13→Pin 22) to escape breadboard conflict.
 BTN_VOICE_NOTE = 22    # Button 3: Voice note (hold)
 
 # AI Assistant mode
@@ -70,8 +70,15 @@ BTN_AI_AGENT = 13      # Button 6: Agent commands
 ALL_BUTTONS = [BTN_SESSION, BTN_PHOTO_VIDEO, BTN_VOICE_NOTE,
                BTN_AI_CAMERA, BTN_AI_VOICE, BTN_AI_AGENT]
 
-BUTTON_DEBOUNCE_MS = 300    # Software debounce
-DOUBLE_PRESS_WINDOW = 0.5  # seconds
+BUTTON_DEBOUNCE_MS = 30     # Raw RPi.GPIO edge guard only. Real click
+                            # validation lives in ButtonHandler: a falling
+                            # edge must stay LOW, then release HIGH, before
+                            # another edge can count as a second click. This
+                            # keeps fast physical doubles usable without
+                            # letting contact bounce become B2 video/SOS.
+BUTTON_PRESS_STABLE_MS = 20
+BUTTON_RELEASE_STABLE_MS = 40
+DOUBLE_PRESS_WINDOW = 0.7   # seconds after a validated first click.
 
 # === AI ===
 GEMINI_MODEL = "gemini-2.5-flash"

@@ -32,6 +32,7 @@ dashboard/static/captures/*.png
 # Per-user agent tuning (system prompt, VAD, gains) — set via the
 # Agent Settings panel in the dashboard. Local only.
 dashboard/agent_settings.json
+dashboard/openai_settings.json
 
 # OS
 .DS_Store

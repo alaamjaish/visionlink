@@ -1,0 +1,358 @@
+# Codex Documentation
+
+Date: 2026-05-10
+Timezone: Europe/Istanbul
+Repository: /home/visionlink/Desktop/visionlink
+Branch: openai-sdk
+
+This file documents the Codex work performed today on the VisionLink wearable
+button, camera, SOS, and video recording flows.
+
+## Starting Point
+
+The user reported several urgent hardware/runtime problems:
+
+- B4 audio-only AI agent could start and double-click stop correctly.
+- B5 camera/vision AI agent could start, but physical double-click stop stopped
+  working after the camera path was used.
+- B6 SOS double-click was no longer reliably triggering SOS; single clicks kept
+  logging the warning instead.
+- B2 visual/camera action repeatedly failed with:
+  "Camera __init__ sequence did not complete."
+- B2 double-click video recording only created a short 5 second clip and had no
+  audio.
+- Documentation and voice-note buttons were mostly working, which suggested the
+  failure was not a total GPIO/dashboard failure.
+
+The relevant log excerpt showed:
+
+- WebSocket connection worked.
+- OpenAI Realtime audio session started and stopped.
+- B5 OpenAI vision session attempted to start but camera open failed.
+- Physical B6 clicks were being recognized as single clicks instead of a double.
+- B2 single photo calls failed with camera initialization errors.
+- Voice notes were saved successfully after stale mic blocks were drained.
+
+## Pre-Codex Safety Commit
+
+Before modifying code, the existing dirty worktree was committed and pushed
+exactly as requested.
+
+Commit:
+
+- 7e2e44e precodex work
+
+Purpose:
+
+- Preserve all pre-existing local work before Codex made changes.
+- Make sure there was a recoverable checkpoint on GitHub before fixes started.
+
+## Deep Investigation Findings
+
+### Physical Button Double-Click Issue
+
+Root cause found:
+
+- The hardware button path was relying too much on raw falling-edge events.
+- Contact bounce while a button remained physically held could be interpreted as
+  an additional click.
+- That made B5/B6 double-click behavior unreliable. In practice, the system could
+  treat repeated noisy edges as singles, ignore intended doubles, or fire the
+  wrong event timing.
+
+Why this matched the symptoms:
+
+- B4 could work because its path was simpler and less affected in the test flow.
+- B5/B6 double-click depended heavily on correct gesture classification.
+- B6 repeatedly logged "single click - double-click required" even when the user
+  intended a double-click.
+
+### Camera Lifecycle Issue
+
+Root cause found:
+
+- Camera access was not guarded tightly enough across dashboard/session paths.
+- AI vision, snap capture, B2 photo, and SOS camera use could fight over the same
+  camera hardware.
+- Camera objects were not always opened, closed, and reused with a single clear
+  lifecycle.
+
+Why this matched the symptoms:
+
+- The log showed "Camera __init__ sequence did not complete."
+- After B5 vision/camera use, later B2 camera use could fail repeatedly.
+- This indicated the camera was either busy, not fully released, or being opened
+  concurrently.
+
+### B2 Video Was 5 Seconds And Silent
+
+Root cause found:
+
+- `src/subsystems/button_handlers.py` had `b2_record_video(... duration_s=5.0)`.
+- `dashboard/server.py` called B2 video without passing a duration, so it always
+  used the 5 second default.
+- The old B2 implementation used:
+  `rpicam-vid --codec libav --libav-format mp4 -t <duration_ms> -n`
+- That command captured video only.
+- `config.py` had video settings such as `VIDEO_MAX_DURATION`, `VIDEO_RESOLUTION`,
+  and `VIDEO_FPS`, but the old B2 handler did not meaningfully use them for a
+  user-controlled start/stop recording.
+
+Why audio was not present:
+
+- The old B2 video path never captured audio.
+- A legacy script existed at `scripts/capture_av_mp4.sh`, but it used `arecord`.
+- `arecord` was not the right solution because the I2S mic is already owned by
+  the long-running `audio_worker`.
+- Opening the mic again from `arecord` would conflict with the audio worker and
+  can fail with a busy device.
+
+Correct audio strategy:
+
+- Use the existing `AudioBridge`.
+- The `AudioBridge` already receives mic blocks from `audio_worker`.
+- B2 video audio should be written from those mic blocks into a WAV file and then
+  muxed with the camera video using `ffmpeg`.
+
+## Button And Camera Fix Commit
+
+Commit:
+
+- 93ca4d7 fix buttons and camera lifecycle
+
+Pushed to:
+
+- origin/openai-sdk
+
+Major changes:
+
+- `config.py`
+  - Set raw GPIO debounce to 30 ms.
+  - Added explicit stable press/release validation timings.
+  - Kept the double-press window fast enough for real physical double-clicks.
+
+- `src/hardware/buttons.py`
+  - Reworked physical button recognition.
+  - Raw falling edges now become validated clicks only after the input stays low.
+  - A click is not considered complete until the release is stable high.
+  - Bounce while held is ignored.
+  - A second validated press/release inside the double window becomes a double.
+
+- `dashboard/server.py`
+  - Added a shared camera lock.
+  - Made `SessionCamera` open, close, and JPEG capture safer.
+  - Ensured OpenAI B5 auto-snap waits for the session to actually connect before
+    trying to inject a frame.
+  - Improved cleanup so idle camera use releases `/dev/video*`.
+
+- `src/subsystems/button_handlers.py`
+  - B2 camera/video handlers now accept the camera lock where needed.
+  - B4/B5 stop path and SOS path were verified through the unified dashboard
+    button dispatch.
+
+- `tests/test_button_handler.py`
+  - Added tests for bounce while held.
+  - Added tests for fast press/release/press double-click recognition.
+
+Verification performed for this commit:
+
+- `python3 -m py_compile ...` passed.
+- `python3 -m unittest discover -s tests -p 'test_*.py'` passed.
+- Dashboard restarted successfully.
+- GPIO bridge restarted successfully.
+- `/api/health` returned healthy.
+- Verified B4 double stop.
+- Verified B5 double stop.
+- Verified B6 double SOS trigger path.
+- Verified the camera was released when sessions were idle.
+
+Note:
+
+- During verification, some test SOS/button events were intentionally triggered.
+- The system ended with no active AI session according to `/api/health`.
+
+## B2 Video With Audio Design Decision
+
+The chosen behavior:
+
+- B2 double-click starts recording.
+- B2 double-click again stops recording.
+- Recording is not fixed to 5 seconds anymore.
+- A safety timeout remains as a backstop, defaulting to 300 seconds.
+- Audio is captured through `AudioBridge`, not `arecord`.
+- Video is captured with `rpicam-vid`.
+- Audio and video are muxed into one MP4 with `ffmpeg`.
+
+Why this is the correct design:
+
+- It matches the user request: "double click to turn it on, double click to turn
+  it off."
+- It avoids ALSA/I2S mic contention.
+- It keeps the existing audio worker as the single owner of the mic hardware.
+- It keeps physical and on-screen button behavior unified because both hit
+  `/api/button/2/double`.
+
+## B2 Video With Audio Fix Commit
+
+Commit:
+
+- ec3f211 add b2 video audio toggle
+
+Pushed to:
+
+- origin/openai-sdk
+
+Major changes:
+
+- `src/subsystems/button_handlers.py`
+  - Replaced the old fixed 5 second video-only B2 handler.
+  - Added B2 video recording state:
+    - `video_recording`
+    - `video_stop_event`
+    - `video_task`
+    - `video_started_at`
+    - `video_session_id`
+    - `video_id`
+  - First B2 double-click starts a background recording task.
+  - Second B2 double-click sets the stop event.
+  - The background task then finalizes the video, muxes audio, uploads it, logs
+    it, broadcasts it, and clears state.
+  - Uses `rpicam-vid` to create a temporary `.h264` video file.
+  - Uses `AudioBridge.read_mic_block()` to write temporary `.wav` audio.
+  - Uses `ffmpeg` to produce the final `.mp4`.
+  - Uploads the final MP4 to Supabase storage.
+  - Inserts a `session_assets` row with `kind = video`.
+  - Uses `_orphan/` if no documentation session is open.
+  - Deletes temporary files in `/tmp`.
+
+- `dashboard/server.py`
+  - B2 double now passes:
+    - `bridge`
+    - `camera_lock`
+    - `is_ai_session_running`
+  - This lets the recorder safely check mic/camera conflicts before starting.
+
+- `tests/test_button_handler.py`
+  - Added a B2 double-click video toggle unit test.
+
+Guards added around video recording:
+
+- B2 single photo is blocked while B2 video recording is active.
+- B3 voice note is blocked while B2 video recording is active.
+- B4 AI audio is blocked while B2 video recording is active.
+- B5 AI vision is blocked while B2 video recording is active.
+- B2 video start is blocked while an AI session, voice note, or SOS is active.
+- B6 SOS will request B2 video stop before arming SOS.
+
+Runtime settings:
+
+- Default safety limit:
+  - `B2_VIDEO_MAX_DURATION=300` seconds if not overridden in the environment.
+- Default video bitrate:
+  - `B2_VIDEO_BITRATE=5000000` if not overridden in the environment.
+- Video size and FPS:
+  - Uses `VIDEO_RESOLUTION` and `VIDEO_FPS` from `config.py`.
+- Audio format:
+  - Uses `AUDIO_SAMPLE_RATE` and `AUDIO_CHANNELS` from `config.py`.
+
+## B2 Video Verification
+
+Static checks:
+
+- `python3 -m py_compile src/subsystems/button_handlers.py dashboard/server.py tests/test_button_handler.py`
+  - Passed.
+- `python3 -m unittest discover -s tests -p 'test_*.py'`
+  - Passed.
+  - 3 tests passed.
+
+Live service checks:
+
+- Dashboard restarted.
+- GPIO bridge restarted.
+- `/api/health` returned:
+  - `ok: true`
+  - Gemini API key present.
+  - OpenAI API key present.
+  - No live Gemini session.
+  - No live OpenAI session.
+
+Live B2 API path test:
+
+- Called `POST /api/button/2/double` to start recording.
+- Waited 4 seconds.
+- Called `POST /api/button/2/double` to stop recording.
+- This is the same dashboard endpoint used by the GPIO bridge for the physical
+  B2 double-click.
+
+Final successful log:
+
+- `_orphan/video_1778363850814.mp4 (3.5s, with audio, 284974 bytes)`
+
+Other verification clips created during iterative testing:
+
+- `_orphan/video_1778363428792.mp4`
+- `_orphan/video_1778363509031.mp4`
+- `_orphan/video_1778363583502.mp4`
+- `_orphan/video_1778363672633.mp4`
+- `_orphan/video_1778363734146.mp4`
+
+Those were test uploads created while tuning stop timing, duration calculation,
+and cleanup.
+
+Final process state after verification:
+
+- Dashboard running:
+  - `python3 -m uvicorn dashboard.server:app --host 0.0.0.0 --port 8000`
+- GPIO bridge running:
+  - `python3 -u scripts/gpio_bridge.py`
+- No `rpicam-vid` process left running.
+- No `ffmpeg` process left running.
+
+## Current Git History
+
+Latest relevant commits:
+
+- ec3f211 add b2 video audio toggle
+- 93ca4d7 fix buttons and camera lifecycle
+- 7e2e44e precodex work
+
+Current branch:
+
+- openai-sdk
+
+Remote:
+
+- origin: https://github.com/alaamjaish/visionlink.git
+
+Push status:
+
+- `openai-sdk` was pushed to `origin/openai-sdk`.
+
+## Important Behavioral Summary
+
+After today's work:
+
+- B1 documentation session toggle remains unchanged.
+- B2 single photo is still a photo action, but it refuses while video recording
+  is active.
+- B2 double video is now start/stop video with audio.
+- B3 voice note still records through `AudioBridge`, but refuses while B2 video
+  is using the mic.
+- B4 AI audio can start/stop, but refuses while B2 video is recording.
+- B5 AI vision can start/stop and snap, but refuses while B2 video is recording.
+- B6 SOS double-click was repaired via button gesture fixes, and it can stop
+  active B2 video before arming SOS.
+
+## Remaining Notes
+
+- The final B2 test was performed through the dashboard endpoint. That endpoint
+  is the same one called by the GPIO bridge, so the physical B2 double-click
+  should follow the same behavior.
+- The user should still physically test B2 double-click on the wearable because
+  actual button feel and timing are hardware-dependent.
+- There is a 300 second safety timeout for video recording. It exists to avoid a
+  stuck recorder if the second double-click never arrives.
+- B2 stop returns quickly; mux/upload happen in the background and the dashboard
+  log reports when the MP4 is saved.
+- Multiple `_orphan/` test clips were created because no documentation session
+  was open during some verification runs.

@@ -20,6 +20,7 @@ import asyncio
 import json
 import os
 import sys
+import threading
 import time
 import traceback
 from pathlib import Path
@@ -35,6 +36,15 @@ from google.genai import types
 from dashboard.audio_bridge import AudioBridge
 from dashboard.audio_worker import BLOCK, MIC_RATE, SPEAKER_RATE
 from src.ai.tools import TOOL_HANDLERS, WORKER_NAME, build_tools
+from src.ai.openai_realtime import (
+    DEFAULT_OPENAI_SETTINGS,
+    OPENAI_MODEL,
+    OpenAISession,
+    load_openai_settings,
+    save_openai_settings,
+)
+from src.ai.openai_tools import describe_openai_tools
+from src.subsystems import button_handlers as bh
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -47,6 +57,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 load_dotenv(PROJECT_ROOT / ".env", override=True)
 
 API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 MODEL = "gemini-3.1-flash-live-preview"
 # MIC_RATE / SPEAKER_RATE / BLOCK come from dashboard.audio_worker
 # so the parent and worker can never disagree on format.
@@ -235,6 +246,12 @@ current_camera = None   # type: ignore  # SessionCamera instance during snap/vid
 live_mode: str = "audio"   # "audio" | "snap" | "video"
 last_frame_jpeg: Optional[bytes] = None
 
+# ---- OpenAI Realtime session (parallel to Gemini, never coexists with it) ----
+oai_task: Optional[asyncio.Task] = None
+oai_session: Optional[OpenAISession] = None
+oai_camera: Optional["SessionCamera"] = None  # forward type ref
+_camera_lock = threading.RLock()
+
 # Audio I/O lives in a subprocess so an ALSA `plug` device assertion
 # (the C-level pcm_plugin.c crash) only kills the child, not the FastAPI
 # server. The bridge auto-restarts the worker on death.
@@ -310,7 +327,11 @@ async def index() -> FileResponse:
 async def ws_endpoint(ws: WebSocket) -> None:
     await ws.accept()
     ws_clients.add(ws)
-    await ws.send_json({"type": "state", **state})
+    await ws.send_json({
+        "type": "state",
+        **state,
+        "sos_active_id": bh._state.sos_active_id,
+    })
     try:
         while True:
             # We only push; keep connection alive.
@@ -329,31 +350,79 @@ class SessionCamera:
 
     def open(self) -> None:
         from picamera2 import Picamera2
-        cam = Picamera2()
-        cfg = cam.create_still_configuration(main={"size": (1024, 576)})
-        cam.configure(cfg)
-        cam.start()
-        time.sleep(0.4)  # exposure settle
-        self._cam = cam
+        import gc
+
+        with _camera_lock:
+            self.close()
+            cam = None
+            try:
+                cam = Picamera2()
+                # Store immediately so close() can clean up if configure/start
+                # raises after Picamera2 has acquired libcamera resources.
+                self._cam = cam
+                cfg = cam.create_still_configuration(main={"size": (1024, 576)})
+                cam.configure(cfg)
+                cam.start()
+                time.sleep(0.4)  # exposure settle
+            except Exception:
+                if cam is not None:
+                    try:
+                        cam.stop()
+                    except Exception:
+                        pass
+                    try:
+                        cam.close()
+                    except Exception:
+                        pass
+                self._cam = None
+                gc.collect()
+                raise
 
     def close(self) -> None:
-        if self._cam is not None:
-            try:
-                self._cam.close()
-            except Exception:
-                pass
-            self._cam = None
+        with _camera_lock:
+            if self._cam is not None:
+                cam = self._cam
+                self._cam = None
+                try:
+                    cam.stop()
+                except Exception:
+                    pass
+                try:
+                    cam.close()
+                except Exception:
+                    pass
+                # Picamera2 has internal C-level libcamera resources that don't
+                # always release on close() if construction half-failed earlier
+                # in the session. Force a GC pass so the underlying camera
+                # handle is freed before the next open().
+                import gc
+                gc.collect()
 
     def grab_jpeg(self) -> bytes:
         if self._cam is None:
             raise RuntimeError("camera not open")
         import io
-        buf = io.BytesIO()
-        self._cam.capture_file(buf, format="jpeg")
-        return buf.getvalue()
+        with _camera_lock:
+            buf = io.BytesIO()
+            self._cam.capture_file(buf, format="jpeg")
+            return buf.getvalue()
 
 
-async def run_live_session(mode: str = "audio") -> None:
+async def run_live_session(
+    mode: str = "audio",
+    system_prompt_override: Optional[str] = None,
+    start_button: int = 4,
+) -> None:
+    """Run the Gemini Live session.
+
+    `system_prompt_override` lets callers (specifically the SOS controller)
+    inject a temporary persona without touching agent_settings.json. When
+    None, falls back to agent_settings['system_prompt'] as usual.
+
+    `start_button` is 4 (audio agent) or 5 (vision agent) — broadcast in
+    live_state so the simulator only highlights the button that owns this
+    session, not both.
+    """
     if not API_KEY:
         await log("GEMINI_API_KEY missing in .env — cannot start", "error")
         return
@@ -362,7 +431,10 @@ async def run_live_session(mode: str = "audio") -> None:
     live_mode = mode if mode in ("audio", "snap", "video") else "audio"
     state["mode"] = live_mode
     last_frame_jpeg = None
-    await log(f"Starting Live session — mode={live_mode}")
+    if system_prompt_override:
+        await log(f"Starting Live session — mode={live_mode} (custom system prompt)")
+    else:
+        await log(f"Starting Live session — mode={live_mode}")
 
     client = genai.Client(api_key=API_KEY, http_options={"api_version": "v1alpha"})
     # Read latest tunable values from agent_settings (mutated via /api/agent/settings)
@@ -393,7 +465,7 @@ async def run_live_session(mode: str = "audio") -> None:
         # function_calling mode knob. Tool-calling reliability is driven by
         # the system prompt and example density.
         system_instruction=types.Content(parts=[types.Part.from_text(
-            text=agent_settings["system_prompt"]
+            text=system_prompt_override or agent_settings["system_prompt"]
         )]),
     )
 
@@ -448,7 +520,13 @@ async def run_live_session(mode: str = "audio") -> None:
         async with client.aio.live.connect(model=MODEL, config=config) as session:
             current_session = session
             state["live_connected"] = True
-            await broadcast({"type": "live_state", "connected": True, "mode": live_mode})
+            await broadcast({
+                "type": "live_state",
+                "connected": True,
+                "mode": live_mode,
+                "provider": "gemini",
+                "start_button": start_button,
+            })
             await log(f"Connected to Gemini Live ({live_mode}) — speak now")
 
             loop = asyncio.get_running_loop()
@@ -504,6 +582,8 @@ async def run_live_session(mode: str = "audio") -> None:
                         if muted % 20 == 0:
                             dlog(f"mic muted ({muted} blocks, half-duplex while Gemini talks)")
                         continue
+                    if muted:
+                        muted = 0
                     raw = bytes(data)
                     arr = np.frombuffer(raw, dtype=np.int16).astype(np.int32)
                     if arr.size:
@@ -643,9 +723,12 @@ async def run_live_session(mode: str = "audio") -> None:
                 tasks.append(video_stream())
             await asyncio.gather(*tasks)
     except asyncio.CancelledError:
-        await log("Live session cancelled")
+        await log("Gemini Live session cancelled")
     except Exception as exc:
-        await log(f"Live session error: {exc}", "error")
+        # Tag the provider so quota / 1011 errors are obviously Gemini-side
+        # (the user can't tell from a generic message whether their Gemini
+        # or OpenAI quota was hit).
+        await log(f"Gemini Live session error: {exc}", "error")
         traceback.print_exc()
     finally:
         current_session = None
@@ -659,8 +742,13 @@ async def run_live_session(mode: str = "audio") -> None:
                 pass
         state["live_connected"] = False
         state["mode"] = "audio"
-        await broadcast({"type": "live_state", "connected": False})
-        await log("Live session closed")
+        await broadcast({
+            "type": "live_state",
+            "connected": False,
+            "provider": "gemini",
+            "start_button": start_button,
+        })
+        await log("Gemini Live session closed")
 
 
 @app.post("/api/live/start")
@@ -732,25 +820,40 @@ async def photo() -> JSONResponse:
     loop = asyncio.get_running_loop()
 
     def _capture_transient() -> str:
-        cam = Picamera2()
-        cfg = cam.create_still_configuration(main={"size": (1280, 720)})
-        cam.configure(cfg)
-        cam.start()
-        time.sleep(0.6)  # let exposure settle
-        fname = f"photo_{int(time.time())}.jpg"
-        cam.capture_file(str(CAPTURES_DIR / fname))
-        cam.close()
-        return fname
+        import gc
+        with _camera_lock:
+            cam = None
+            try:
+                cam = Picamera2()
+                cfg = cam.create_still_configuration(main={"size": (1280, 720)})
+                cam.configure(cfg)
+                cam.start()
+                time.sleep(0.6)  # let exposure settle
+                fname = f"photo_{int(time.time())}.jpg"
+                cam.capture_file(str(CAPTURES_DIR / fname))
+                return fname
+            finally:
+                if cam is not None:
+                    try:
+                        cam.stop()
+                    except Exception:
+                        pass
+                    try:
+                        cam.close()
+                    except Exception:
+                        pass
+                gc.collect()
 
-    def _capture_session() -> str:
+    def _capture_session(session_cam: SessionCamera) -> str:
         # Re-use the session camera (open in snap/video mode)
         fname = f"photo_{int(time.time())}.jpg"
-        current_camera._cam.capture_file(str(CAPTURES_DIR / fname))  # type: ignore[attr-defined]
+        (CAPTURES_DIR / fname).write_bytes(session_cam.grab_jpeg())
         return fname
 
     try:
-        if current_camera is not None:
-            filename = await loop.run_in_executor(None, _capture_session)
+        session_cam = current_camera or oai_camera
+        if session_cam is not None:
+            filename = await loop.run_in_executor(None, _capture_session, session_cam)
         else:
             filename = await loop.run_in_executor(None, _capture_transient)
         state["latest_photo"] = f"/static/captures/{filename}"
@@ -846,12 +949,635 @@ async def agent_settings_set(payload: dict) -> JSONResponse:
         return JSONResponse({"error": f"bad payload: {e}"}, status_code=400)
 
 
+@app.get("/api/wearable/settings")
+async def wearable_settings_get() -> JSONResponse:
+    """Returns the current wearable_settings row as the wearable sees it.
+
+    Use this from the voice command center to display "B4 → Gemini" etc.
+    so the worker can confirm what provider each button will fire BEFORE
+    pressing it. Falls back to Python defaults if Supabase is unreachable.
+    """
+    s = await bh.load_wearable_settings()
+    return JSONResponse(s)
+
+
+_ALLOWED_SETTINGS_FIELDS = {
+    "b4_provider", "b5_provider", "sos_provider", "b5_vision_mode",
+    "sos_photo_interval_s", "sos_max_duration_s",
+}
+_ALLOWED_PROVIDERS = {"gemini", "openai"}
+_ALLOWED_VISION_MODES = {"snap_on_press", "gemini_video", "auto_snap_4s"}
+
+
+@app.post("/api/wearable/settings")
+async def wearable_settings_post(payload: dict) -> JSONResponse:
+    """Update one or more fields on the wearable_settings singleton.
+
+    Used by the voice center's per-button quick-toggle (e.g. flip B4 from
+    Gemini to OpenAI in one click). Validates field names and values
+    so a typo doesn't quietly write garbage to the row.
+    """
+    update: dict[str, Any] = {}
+    for k, v in payload.items():
+        if k not in _ALLOWED_SETTINGS_FIELDS:
+            return JSONResponse(
+                {"error": f"unknown or read-only field {k!r}"}, status_code=400
+            )
+        if k.endswith("_provider"):
+            if v not in _ALLOWED_PROVIDERS:
+                return JSONResponse(
+                    {"error": f"{k} must be 'gemini' or 'openai' — got {v!r}"},
+                    status_code=400,
+                )
+            update[k] = v
+        elif k == "b5_vision_mode":
+            if v not in _ALLOWED_VISION_MODES:
+                return JSONResponse(
+                    {"error": f"b5_vision_mode must be one of {_ALLOWED_VISION_MODES}"},
+                    status_code=400,
+                )
+            update[k] = v
+        elif k in ("sos_photo_interval_s", "sos_max_duration_s"):
+            n = int(v)
+            if n < 1 or n > 7200:
+                return JSONResponse(
+                    {"error": f"{k} out of range"}, status_code=400
+                )
+            update[k] = n
+    if not update:
+        return JSONResponse({"error": "no valid fields to update"}, status_code=400)
+
+    sb = bh._sb_client()
+    update["updated_at"] = bh._now_iso()
+    def _do():
+        return sb.table("wearable_settings").update(update).eq("id", "current").execute()
+    r = await asyncio.to_thread(_do)
+    saved = r.data[0] if r.data else update
+    await broadcast({"type": "wearable_settings_updated", **update})
+    await log(f"⚙ settings updated: {update}", "info")
+    return JSONResponse({"ok": True, "saved": saved})
+
+
 @app.get("/api/health")
 async def health() -> JSONResponse:
     return JSONResponse({
         "ok": True,
         "has_api_key": bool(API_KEY),
+        "has_openai_key": bool(OPENAI_API_KEY),
         "model": MODEL,
+        "openai_model": OPENAI_MODEL,
         "live_connected": state["live_connected"],
+        "openai_connected": oai_session is not None,
         "clients": len(ws_clients),
     })
+
+
+# ============================================================
+# OpenAI Realtime — parallel provider, shares tools/DB/audio
+# ============================================================
+
+async def _run_oai_session_task(
+    start_camera: bool,
+    start_button: int = 4,
+) -> None:
+    """Wrapper that holds a reference to the OpenAISession so other
+    endpoints (snap, stop) can talk to it while it runs.
+
+    `start_button` (4 = audio agent, 5 = vision agent) lets the simulator
+    highlight only the button that owns this session.
+    """
+    global oai_session, oai_camera, last_frame_jpeg
+
+    if not OPENAI_API_KEY:
+        await log("OPENAI_API_KEY missing in .env — cannot start OpenAI session", "error")
+        return
+
+    settings = load_openai_settings()
+    sess = OpenAISession(
+        api_key=OPENAI_API_KEY,
+        bridge=get_bridge(),
+        settings=settings,
+        broadcast=broadcast,
+        log=log,
+        dlog=dlog,
+        start_button=start_button,
+    )
+
+    # Open the session camera if requested (so SNAP & ASK works without
+    # blocking on a transient picamera2 init). Do this before publishing
+    # oai_session so B5 auto-snap cannot race a concurrent transient camera
+    # open against this long-running SessionCamera.open().
+    cam: Optional[SessionCamera] = None
+    if start_camera:
+        try:
+            cam = SessionCamera()
+            await asyncio.to_thread(cam.open)
+            oai_camera = cam
+            await log("Session camera opened (OpenAI mode)", "info")
+        except Exception as exc:
+            await log(f"OpenAI camera open failed: {exc} — continuing audio-only", "error")
+            cam = None
+            oai_camera = None
+
+    oai_session = sess
+    state["mode"] = "openai"
+    state["live_connected"] = True
+    try:
+        await sess.run()
+    finally:
+        oai_session = None
+        if cam is not None:
+            try:
+                await asyncio.to_thread(cam.close)
+            except Exception:
+                pass
+        oai_camera = None
+        state["live_connected"] = False
+        state["mode"] = "audio"
+        last_frame_jpeg = None
+
+
+@app.post("/api/live/oai/start")
+async def oai_start(camera: bool = False) -> JSONResponse:
+    """Start the OpenAI Realtime session.
+
+    Set ?camera=true to also open the Pi camera so SNAP & ASK works
+    without a fresh picamera2 init each call.
+    """
+    global oai_task
+
+    if not OPENAI_API_KEY:
+        return JSONResponse(
+            {"error": "OPENAI_API_KEY missing in .env"},
+            status_code=400,
+        )
+    if live_task and not live_task.done():
+        return JSONResponse(
+            {"error": "Gemini Live session is running — stop it first"},
+            status_code=409,
+        )
+    if oai_task and not oai_task.done():
+        return JSONResponse({"status": "already_running"})
+
+    oai_task = asyncio.create_task(_run_oai_session_task(camera))
+    return JSONResponse({"status": "starting", "provider": "openai", "camera": camera})
+
+
+@app.post("/api/live/oai/stop")
+async def oai_stop() -> JSONResponse:
+    global oai_task
+    if oai_task and not oai_task.done():
+        oai_task.cancel()
+        return JSONResponse({"status": "stopping"})
+    return JSONResponse({"status": "not_running"})
+
+
+@app.post("/api/live/oai/snap")
+async def oai_snap(prompt: Optional[str] = None) -> JSONResponse:
+    """Capture a frame and inject it into the live OpenAI session.
+
+    Unlike Gemini's snap which requires the session to have started in
+    snap/video mode, OpenAI accepts images at any time during a session.
+    If no SessionCamera is open we lazily grab a transient picamera2.
+    """
+    global last_frame_jpeg
+    sess = oai_session
+    if sess is None:
+        return JSONResponse(
+            {"error": "no active OpenAI session"}, status_code=400
+        )
+    try:
+        if oai_camera is not None:
+            jpeg = await asyncio.to_thread(oai_camera.grab_jpeg)
+        else:
+            # Transient picamera2 capture — slower (~1 s) but works without
+            # ?camera=true on session start.
+            from picamera2 import Picamera2
+            import gc
+            import io
+            def _transient() -> bytes:
+                with _camera_lock:
+                    cam = None
+                    try:
+                        cam = Picamera2()
+                        cfg = cam.create_still_configuration(main={"size": (1024, 576)})
+                        cam.configure(cfg)
+                        cam.start()
+                        time.sleep(0.4)
+                        buf = io.BytesIO()
+                        cam.capture_file(buf, format="jpeg")
+                        return buf.getvalue()
+                    finally:
+                        if cam is not None:
+                            try:
+                                cam.stop()
+                            except Exception:
+                                pass
+                            try:
+                                cam.close()
+                            except Exception:
+                                pass
+                        gc.collect()
+            jpeg = await asyncio.to_thread(_transient)
+
+        await sess.send_image(jpeg, prompt=prompt)
+        last_frame_jpeg = jpeg
+        return JSONResponse({"ok": True, "bytes": len(jpeg)})
+    except Exception as exc:
+        traceback.print_exc()
+        await log(f"OpenAI snap failed: {exc}", "error")
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.get("/api/agent/openai/settings")
+async def oai_settings_get() -> JSONResponse:
+    s = load_openai_settings()
+    return JSONResponse({
+        "model": OPENAI_MODEL,
+        "system_prompt": s.get("system_prompt", ""),
+        "default_system_prompt": DEFAULT_OPENAI_SETTINGS["system_prompt"],
+        "voice": s.get("voice", DEFAULT_OPENAI_SETTINGS["voice"]),
+        "reasoning_effort": s.get(
+            "reasoning_effort",
+            DEFAULT_OPENAI_SETTINGS["reasoning_effort"],
+        ),
+        "speed": s.get("speed", DEFAULT_OPENAI_SETTINGS["speed"]),
+        "vad": s.get("vad", DEFAULT_OPENAI_SETTINGS["vad"]),
+        "audio": s.get("audio", DEFAULT_OPENAI_SETTINGS["audio"]),
+        "tools": describe_openai_tools(),
+        "live_active": oai_session is not None,
+        "has_api_key": bool(OPENAI_API_KEY),
+        "settings_path": str(PROJECT_ROOT / "dashboard" / "openai_settings.json"),
+    })
+
+
+@app.post("/api/agent/openai/settings")
+async def oai_settings_set(payload: dict) -> JSONResponse:
+    """Update OpenAI-specific tunables. Applied to the NEXT live session."""
+    try:
+        s = load_openai_settings()
+        if payload.get("reset"):
+            s = json.loads(json.dumps(DEFAULT_OPENAI_SETTINGS))
+        if "system_prompt" in payload:
+            sp = str(payload["system_prompt"]).strip()
+            if not sp:
+                return JSONResponse(
+                    {"error": "system_prompt cannot be empty"},
+                    status_code=400,
+                )
+            s["system_prompt"] = sp
+        if "voice" in payload:
+            s["voice"] = str(payload["voice"]).strip() or DEFAULT_OPENAI_SETTINGS["voice"]
+        if "reasoning_effort" in payload:
+            re_val = str(payload["reasoning_effort"]).strip().lower()
+            if re_val not in ("minimal", "low", "medium", "high"):
+                return JSONResponse(
+                    {"error": "reasoning_effort must be minimal|low|medium|high"},
+                    status_code=400,
+                )
+            s["reasoning_effort"] = re_val
+        if "speed" in payload:
+            sp = float(payload["speed"])
+            if not (0.25 <= sp <= 1.5):
+                return JSONResponse(
+                    {"error": "speed must be 0.25..1.5"},
+                    status_code=400,
+                )
+            s["speed"] = sp
+        if "vad" in payload and isinstance(payload["vad"], dict):
+            v = s.setdefault("vad", dict(DEFAULT_OPENAI_SETTINGS["vad"]))
+            if "threshold" in payload["vad"]:
+                t = float(payload["vad"]["threshold"])
+                if not (0.0 <= t <= 1.0):
+                    return JSONResponse(
+                        {"error": "vad.threshold must be 0.0..1.0"},
+                        status_code=400,
+                    )
+                v["threshold"] = t
+            for key in ("prefix_padding_ms", "silence_duration_ms"):
+                if key in payload["vad"]:
+                    n = int(payload["vad"][key])
+                    if not (0 <= n <= 5000):
+                        return JSONResponse(
+                            {"error": f"vad.{key} must be 0..5000"},
+                            status_code=400,
+                        )
+                    v[key] = n
+        if "audio" in payload and isinstance(payload["audio"], dict):
+            if "mic_gain" in payload["audio"]:
+                g = float(payload["audio"]["mic_gain"])
+                if not (0.1 <= g <= 20.0):
+                    return JSONResponse(
+                        {"error": "audio.mic_gain must be 0.1..20.0"},
+                        status_code=400,
+                    )
+                s.setdefault("audio", {})["mic_gain"] = g
+        save_openai_settings(s)
+        await log("OpenAI agent settings updated (takes effect next session)", "info")
+        await broadcast({"type": "agent_settings_updated", "provider": "openai"})
+        return JSONResponse({
+            "ok": True,
+            "system_prompt": s["system_prompt"],
+            "voice": s["voice"],
+            "reasoning_effort": s["reasoning_effort"],
+            "vad": s["vad"],
+            "audio": s["audio"],
+            "applies": "next OpenAI session — current session keeps its config",
+        })
+    except (ValueError, TypeError) as e:
+        return JSONResponse({"error": f"bad payload: {e}"}, status_code=400)
+
+
+# ============================================================
+# 6-button simulator — single source of truth for button behavior
+# ============================================================
+#
+# Each /api/button/{n}/{event} fires the matching coroutine in
+# src/subsystems/button_handlers.py. The same handlers will be
+# bound to GPIO callbacks once we go physical.
+
+def _grab_jpeg_for_buttons() -> bytes:
+    """Capture a JPEG using the open SessionCamera if available, else
+    take a transient picamera2 lock. Sync — call via to_thread.
+
+    Wrapped in try/finally + gc.collect() because Picamera2 leaks the
+    underlying camera handle on failed init paths (observed during a
+    busy-camera retry storm: each failed Picamera2() attempt leaves a
+    half-initialized object holding /dev/video0 until GC runs).
+    """
+    import io as _io
+    if current_camera is not None:
+        return current_camera.grab_jpeg()
+    if oai_camera is not None:
+        return oai_camera.grab_jpeg()
+    from picamera2 import Picamera2
+    import gc
+    with _camera_lock:
+        cam = None
+        try:
+            cam = Picamera2()
+            cfg = cam.create_still_configuration(main={"size": (1024, 576)})
+            cam.configure(cfg)
+            cam.start()
+            time.sleep(0.4)
+            buf = _io.BytesIO()
+            cam.capture_file(buf, format="jpeg")
+            return buf.getvalue()
+        finally:
+            if cam is not None:
+                try:
+                    cam.stop()
+                except Exception:
+                    pass
+                try:
+                    cam.close()
+                except Exception:
+                    pass
+            # Force GC to release leaked refs (especially after exceptions
+            # during Picamera2 init like "Failed to acquire camera").
+            gc.collect()
+
+
+async def _button_ai_starter(
+    provider: str,
+    mode: str,
+    camera: bool,
+    system_prompt_override: Optional[str] = None,
+) -> dict[str, Any]:
+    """Start an AI session of the given provider — used by B4 / B5 / SOS.
+
+    `system_prompt_override` is plumbed through to run_live_session for
+    the Gemini path. (OpenAI uses its own per-session settings JSON
+    + the SOS-specific prompt is set inside _sos_run_session for OpenAI.)
+    """
+    global live_task, oai_task
+
+    # Refuse if any session is already running — pick a winner
+    if (live_task and not live_task.done()) or (oai_task and not oai_task.done()):
+        return {"error": "session already running — double-click to STOP first"}
+
+    # Tag the session with which button started it. Used by live_state to
+    # tell the simulator to highlight ONLY that button (otherwise B4 and B5
+    # both go yellow whenever a session lives, which is misleading).
+    start_button = 5 if camera else 4
+
+    if provider == "openai":
+        if not OPENAI_API_KEY:
+            return {"error": "OPENAI_API_KEY missing"}
+        oai_task = asyncio.create_task(
+            _run_oai_session_task(camera, start_button=start_button)
+        )
+        return {"started": "openai", "camera": camera}
+    elif provider == "gemini":
+        if not API_KEY:
+            return {"error": "GEMINI_API_KEY missing"}
+        gemini_mode = mode if mode in ("audio", "snap", "video") else "audio"
+        live_task = asyncio.create_task(run_live_session(
+            mode=gemini_mode,
+            system_prompt_override=system_prompt_override,
+            start_button=start_button,
+        ))
+        return {"started": "gemini", "mode": gemini_mode}
+    return {"error": f"unknown provider {provider!r}"}
+
+
+async def _button_ai_stopper() -> dict[str, Any]:
+    """Stop whichever AI session is running. Doesn't care about provider."""
+    global live_task, oai_task
+    stopped = []
+    if live_task and not live_task.done():
+        live_task.cancel()
+        stopped.append("gemini")
+    if oai_task and not oai_task.done():
+        oai_task.cancel()
+        stopped.append("openai")
+    if not stopped:
+        return {"status": "not_running"}
+    return {"status": "stopping", "stopped": stopped}
+
+
+async def _b5_auto_snap_when_ready(
+    expected_provider: str,
+    expected_task: asyncio.Task,
+) -> None:
+    """Wait up to ~6 seconds for the live session to be connected, then
+    grab one frame from the camera and inject it. This is what makes B5
+    feel like 'show me what I'm pointing at' instead of 'open camera and
+    do nothing'.
+
+    The task is tied to the specific B5 session that scheduled it. Without
+    that guard, a cancelled B5 startup can wake up later and inject a stale
+    image into a completely separate B4 audio session.
+    """
+    for _ in range(60):  # ~6 s @ 100ms
+        if expected_task.done():
+            dlog("B5 auto-snap abandoned — owning session stopped before ready")
+            return
+
+        oai_ready = (
+            expected_provider == "openai"
+            and oai_task is expected_task
+            and oai_session is not None
+            and getattr(oai_session, "connection", None) is not None
+        )
+        gemini_ready = (
+            expected_provider == "gemini"
+            and live_task is expected_task
+            and current_session is not None
+            and live_mode in ("snap", "video")
+        )
+
+        if oai_ready or gemini_ready:
+            # Let the session settle a beat before injecting (otherwise the
+            # frame races the very first user audio block)
+            await asyncio.sleep(0.6)
+            if expected_task.done():
+                dlog("B5 auto-snap abandoned — owning session stopped during settle")
+                return
+            try:
+                jpeg = await asyncio.to_thread(_grab_jpeg_for_buttons)
+                if oai_ready and oai_session is not None:
+                    await oai_session.send_image(
+                        jpeg,
+                        prompt="The worker just pointed the camera at "
+                               "something. Briefly say what you can see.",
+                    )
+                elif gemini_ready and current_session is not None:
+                    await current_session.send_realtime_input(
+                        video=types.Blob(data=jpeg, mime_type="image/jpeg")
+                    )
+                else:
+                    dlog("B5 auto-snap abandoned — session owner changed")
+                    return
+                await log("👁 B5 auto-snap sent — agent should comment on it", "info")
+                await broadcast({"type": "frame_sent", "n": -1, "auto": True})
+            except Exception as e:
+                await log(f"B5 auto-snap failed: {e}", "warning")
+            return
+        await asyncio.sleep(0.1)
+    await log("B5 auto-snap timed out — session never became ready", "warning")
+
+
+async def _b5_snap_existing() -> dict[str, Any]:
+    """B5 pressed while a session is already running — just snap a frame
+    into the existing session. No restart needed."""
+    try:
+        jpeg = await asyncio.to_thread(_grab_jpeg_for_buttons)
+        if oai_session is not None:
+            await oai_session.send_image(
+                jpeg,
+                prompt="The worker just pointed the camera at something else. "
+                       "Briefly describe what you see now.",
+            )
+            return {"snapped": "openai", "bytes": len(jpeg)}
+        if current_session is not None and live_mode in ("snap", "video"):
+            await current_session.send_realtime_input(
+                video=types.Blob(data=jpeg, mime_type="image/jpeg")
+            )
+            return {"snapped": "gemini", "bytes": len(jpeg)}
+        return {"error": "active session is audio-only — double-click to stop, then re-arm B5"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.post("/api/live/stop_any")
+async def live_stop_any() -> JSONResponse:
+    """Unified stop — kills whichever AI session is running.
+    Used by the debug STOP button + B4/B5 double-click."""
+    return JSONResponse(await _button_ai_stopper())
+
+
+@app.post("/api/button/{n}/{event}")
+async def button_dispatch(n: int, event: str) -> JSONResponse:
+    """Fire the handler for (button n, event). Single source of truth.
+    Same surface GPIO callbacks will use later."""
+    bridge = get_bridge()
+
+    async def _run(coro_factory):
+        try:
+            return await coro_factory()
+        except Exception as e:
+            traceback.print_exc()
+            await log(f"button {n}/{event} error: {e}", "error")
+            return {"error": str(e)}
+
+    if (n, event) == (1, "single"):
+        result = await _run(lambda: bh.b1_doc_session_toggle(log, broadcast))
+    elif (n, event) == (2, "single"):
+        result = await _run(lambda: bh.b2_take_photo(
+            log, broadcast,
+            grab_jpeg=lambda: _grab_jpeg_for_buttons(),
+        ))
+    elif (n, event) == (2, "double"):
+        def _ai_running() -> bool:
+            return ((live_task and not live_task.done())
+                    or (oai_task and not oai_task.done()))
+        result = await _run(lambda: bh.b2_record_video(
+            log, broadcast,
+            bridge=bridge,
+            is_ai_session_running=_ai_running,
+            camera_lock=_camera_lock,
+        ))
+    elif (n, event) == (3, "single"):
+        # Press-to-toggle voice note — first press starts, second stops.
+        # The physical bridge sends this for B3 (the simulator may still
+        # use hold_start/hold_end handled below).
+        def _ai_running() -> bool:
+            return ((live_task and not live_task.done())
+                    or (oai_task and not oai_task.done()))
+        result = await _run(lambda: bh.b3_voice_note_toggle(
+            log, broadcast, bridge, is_ai_session_running=_ai_running,
+        ))
+    elif (n, event) == (3, "hold_start"):
+        def _ai_running() -> bool:
+            return ((live_task and not live_task.done())
+                    or (oai_task and not oai_task.done()))
+        result = await _run(lambda: bh.b3_voice_note_start(
+            log, bridge, is_ai_session_running=_ai_running,
+        ))
+    elif (n, event) == (3, "hold_end"):
+        result = await _run(lambda: bh.b3_voice_note_end(log, broadcast))
+    elif (n, event) == (4, "single"):
+        result = await _run(lambda: bh.b4_ai_voice_only(log, _button_ai_starter))
+    elif (n, event) == (4, "double"):
+        result = await _run(lambda: bh.b_ai_stop_any(log, _button_ai_stopper))
+    elif (n, event) == (5, "single"):
+        # If a session is already live, just inject a fresh frame.
+        # Otherwise start a new vision session AND schedule an auto-snap.
+        any_live = (live_task and not live_task.done()) or \
+                   (oai_task and not oai_task.done())
+        if any_live:
+            await log("👁 B5 → snapping into the live session", "info")
+            result = await _run(lambda: _b5_snap_existing())
+        else:
+            result = await _run(lambda: bh.b5_ai_voice_vision(log, _button_ai_starter))
+            started_provider = result.get("started") if isinstance(result, dict) else None
+            expected_task = (
+                oai_task if started_provider == "openai" else
+                live_task if started_provider == "gemini" else
+                None
+            )
+            if started_provider in ("openai", "gemini") and expected_task is not None:
+                asyncio.create_task(
+                    _b5_auto_snap_when_ready(started_provider, expected_task)
+                )
+    elif (n, event) == (5, "double"):
+        result = await _run(lambda: bh.b_ai_stop_any(log, _button_ai_stopper))
+    elif (n, event) == (6, "single"):
+        result = await _run(lambda: bh.b6_warn_single(log, broadcast))
+    elif (n, event) == (6, "double"):
+        result = await _run(lambda: bh.b6_sos_trigger(
+            log, broadcast,
+            bridge=bridge,
+            grab_jpeg=lambda: _grab_jpeg_for_buttons(),
+            # New deps so SOS can use Gemini (or OpenAI) per wearable_settings.sos_provider
+            ai_starter=_button_ai_starter,
+            ai_stopper=_button_ai_stopper,
+            snap_into_current=_b5_snap_existing,
+        ))
+    else:
+        return JSONResponse(
+            {"error": f"no handler for button {n}/{event}"}, status_code=404
+        )
+
+    return JSONResponse({"button": n, "event": event, "result": result})

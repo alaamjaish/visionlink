@@ -1,4 +1,16 @@
-# Next Session Plan — After 2026-04-19
+# Next Session Plan
+
+> **Update 2026-05-08:** OpenAI's `gpt-realtime-2` (released 2026-05-07)
+> is now integrated as a **second voice provider** alongside Gemini Live.
+> See `Documentation/sessions/2026-05-08-openai-realtime.md`. The
+> Provider radio in the dashboard switches between them; both share the
+> same six tools, database, and ops dashboard. The plan below is from
+> the earlier 2026-04-19 session and largely still applies — substitute
+> "Provider" radio for "mode" wherever relevant.
+
+---
+
+# Original Plan — After 2026-04-19
 
 **Theme**: Move from "it works via a browser button" to "**it works when I press the physical button on my wearable**", and wire Buttons 5 + 6 to real external services (Supabase for lookup, Claude + Resend for email).
 
@@ -91,7 +103,7 @@
    - `ANTHROPIC_API_KEY` — get at console.anthropic.com
    - `RESEND_API_KEY` — get at resend.com
 2. Supabase `components` table created (SQL in Phase C above)
-3. Pi powered, on Wi-Fi, dashboard reachable at http://192.168.0.31:8000
+3. Pi powered, on Wi-Fi, dashboard reachable at http://visionlink.local:8000
 4. All 6 buttons physically pressable (not stuck)
 
 ---

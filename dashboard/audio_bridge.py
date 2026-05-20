@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import asyncio
 import multiprocessing
+import os
 import time
+from pathlib import Path
 from typing import Optional
 
 from dashboard.audio_worker import (
@@ -19,6 +21,50 @@ from dashboard.audio_worker import (
     SPEAKER_RATE,
     run as audio_worker_run,
 )
+
+# ~/.asoundrc has gone missing mid-session more than once (cause unverified —
+# possibly editor sync, SD-card glitch, stray reboot). Without it the audio
+# worker can't resolve the named PCMs `mic_left` / `speaker` and falls into a
+# tight restart loop. Source of truth lives in the repo; we make ~/.asoundrc a
+# symlink to it and re-verify before every worker spawn.
+_ASOUNDRC_REPO = (Path(__file__).resolve().parent.parent / "system" / "asoundrc")
+_ASOUNDRC_USER = Path.home() / ".asoundrc"
+
+
+def _ensure_asoundrc() -> None:
+    """Restore ~/.asoundrc as a symlink to the canonical repo file if missing."""
+    if not _ASOUNDRC_REPO.exists():
+        print(
+            f"[bridge] WARNING: canonical asoundrc missing at {_ASOUNDRC_REPO} "
+            f"— audio worker will likely fail to find named PCMs",
+            flush=True,
+        )
+        return
+
+    # Path.exists() follows symlinks: True only if user file resolves to a real
+    # target. False covers both "file gone" and "dangling symlink".
+    if _ASOUNDRC_USER.exists():
+        return
+
+    # Clean any dangling symlink, then atomically install the canonical one.
+    try:
+        if _ASOUNDRC_USER.is_symlink():
+            _ASOUNDRC_USER.unlink()
+    except FileNotFoundError:
+        pass
+    tmp = _ASOUNDRC_USER.with_suffix(".asoundrc.tmp")
+    try:
+        if tmp.is_symlink() or tmp.exists():
+            tmp.unlink()
+    except FileNotFoundError:
+        pass
+    os.symlink(_ASOUNDRC_REPO, tmp)
+    os.replace(tmp, _ASOUNDRC_USER)
+    print(
+        f"[bridge] HEAL: restored {_ASOUNDRC_USER} -> {_ASOUNDRC_REPO} "
+        f"(was missing — audio worker would have failed)",
+        flush=True,
+    )
 
 
 class AudioBridge:
@@ -38,6 +84,7 @@ class AudioBridge:
         """Spawn a fresh audio worker."""
         if self._proc is not None and self._proc.is_alive():
             return
+        _ensure_asoundrc()
         # Generous queues — Gemini emits speaker audio in MANY small chunks
         # (often >100/sec) and a queue that's too small silently drops most
         # of the voice. Memory is cheap; audio-quality regressions are not.
@@ -85,16 +132,36 @@ class AudioBridge:
     # ------------------------------------------------------------------ mic
 
     def drain_mic(self) -> int:
-        """Discard any mic frames sitting in the queue (call at session start)."""
+        """Discard ALL mic frames currently buffered. Patient enough to handle
+        mp.Queue's lazy feeder thread.
+
+        mp.Queue uses a producer-side feeder thread that asynchronously pushes
+        items from a buffer into the underlying pipe. A naive "while not empty"
+        drain stops as soon as get_nowait raises Empty — even if the feeder is
+        about to push 100+ more items through. We saw this break voice notes:
+        a 5-second press produced a 1m43s file because drain_mic returned
+        after dropping 16 blocks, leaving ~93 s of stale audio that the
+        capture loop then burst-read at the start of recording.
+
+        Drains for up to 500 ms total. Stops early after 100 ms of continuous
+        emptiness (the queue is genuinely drained at that point).
+        """
         dropped = 0
         if self._mic_q is None:
             return 0
-        while True:
+        deadline = time.monotonic() + 0.5
+        last_get_at = time.monotonic()
+        while time.monotonic() < deadline:
             try:
                 self._mic_q.get_nowait()
                 dropped += 1
+                last_get_at = time.monotonic()
             except Exception:
-                break
+                # Empty *right now* — but the feeder may be about to push more.
+                # Give it 100 ms of continuous emptiness before declaring done.
+                if time.monotonic() - last_get_at > 0.1:
+                    break
+                time.sleep(0.02)
         return dropped
 
     async def read_mic_block(self) -> bytes:

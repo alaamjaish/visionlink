@@ -32,9 +32,11 @@ class ButtonHandler:
         self._callbacks = {}          # pin -> {"single": fn, "double": fn, "hold_start": fn, "hold_end": fn}
         self._last_press_time = {}    # pin -> timestamp
         self._pending_single = {}     # pin -> Timer (for double-press detection)
+        self._press_active = {}       # pin -> bool; true until the physical press releases cleanly
         self._hold_active = {}        # pin -> bool
         self._audio_player = audio_player
         self._running = False
+        self._lock = threading.RLock()
 
     def setup(self):
         """Initialize GPIO pins."""
@@ -48,6 +50,7 @@ class ButtonHandler:
         for pin in config.ALL_BUTTONS:
             GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
             self._last_press_time[pin] = 0
+            self._press_active[pin] = False
             self._hold_active[pin] = False
             logger.info(f"GPIO pin {pin} configured as input with pull-up")
 
@@ -87,41 +90,80 @@ class ButtonHandler:
         logger.info("Button listener started")
 
     def _on_button_press(self, pin: int):
-        """Called on button press (falling edge). Handles debounce + double-press."""
-        now = time.time()
-        logger.debug(f"Button press detected on pin {pin}")
+        """GPIO callback on a raw falling edge.
 
-        # Play beep feedback
+        RPi.GPIO bouncetime is intentionally short so it does not swallow the
+        second click of a fast physical double-click. The real debounce happens
+        in a worker thread: accept a click only after the pin is still LOW, and
+        ignore all later falling edges until the same press releases HIGH.
+        """
+        edge_at = time.monotonic()
+        logger.debug(f"Pin {pin}: raw falling edge at {edge_at:.6f}")
+        threading.Thread(
+            target=self._handle_validated_press,
+            args=(pin, edge_at),
+            daemon=True,
+        ).start()
+
+    def _handle_validated_press(self, pin: int, edge_at: float):
+        """Validate a raw edge and route it into single/double/hold logic."""
+        press_stable_s = getattr(config, "BUTTON_PRESS_STABLE_MS", 20) / 1000.0
+        time.sleep(press_stable_s)
+        if not self._running:
+            return
+        try:
+            if GPIO.input(pin) != GPIO.LOW:
+                logger.debug(f"Pin {pin}: ignored unstable edge")
+                return
+        except Exception as e:
+            logger.error(f"Pin {pin}: GPIO read failed during press validation: {e}")
+            return
+
+        with self._lock:
+            if self._press_active.get(pin):
+                logger.debug(f"Pin {pin}: ignored bounce while press is active")
+                return
+            self._press_active[pin] = True
+            self._last_press_time[pin] = edge_at
+
+        # Play beep feedback only for a validated click, not every raw bounce.
         self._beep()
-
         callbacks = self._callbacks.get(pin, {})
 
         # If this button uses hold mode, track it
         if callbacks.get("hold_start"):
-            self._hold_active[pin] = True
+            with self._lock:
+                self._hold_active[pin] = True
             logger.info(f"Pin {pin}: hold started")
             cb = callbacks["hold_start"]
             if cb:
                 threading.Thread(target=cb, daemon=True).start()
             return
 
+        threading.Thread(target=self._release_monitor, args=(pin,), daemon=True).start()
+
         # Double-press detection
         if callbacks.get("double"):
-            if pin in self._pending_single and self._pending_single[pin] is not None:
-                # Second press within window -> double press
-                self._pending_single[pin].cancel()
-                self._pending_single[pin] = None
+            with self._lock:
+                pending = self._pending_single.get(pin)
+                if pending is not None:
+                    pending.cancel()
+                    self._pending_single[pin] = None
+                    is_double = True
+                else:
+                    timer = threading.Timer(
+                        config.DOUBLE_PRESS_WINDOW,
+                        self._fire_single, args=[pin]
+                    )
+                    self._pending_single[pin] = timer
+                    is_double = False
+
+            if is_double:
                 logger.info(f"Pin {pin}: DOUBLE press")
                 cb = callbacks["double"]
                 if cb:
                     threading.Thread(target=cb, daemon=True).start()
             else:
-                # First press -> wait for potential second
-                timer = threading.Timer(
-                    config.DOUBLE_PRESS_WINDOW,
-                    self._fire_single, args=[pin]
-                )
-                self._pending_single[pin] = timer
                 timer.start()
         else:
             # No double-press handler, fire single immediately
@@ -132,11 +174,39 @@ class ButtonHandler:
 
     def _fire_single(self, pin: int):
         """Fire single press after double-press window expires."""
-        self._pending_single[pin] = None
+        with self._lock:
+            if self._pending_single.get(pin) is None:
+                return
+            self._pending_single[pin] = None
         logger.info(f"Pin {pin}: SINGLE press (after timeout)")
         cb = self._callbacks.get(pin, {}).get("single")
         if cb:
             threading.Thread(target=cb, daemon=True).start()
+
+    def _release_monitor(self, pin: int):
+        """Clear press_active only after the switch is stably released."""
+        if not HAS_GPIO:
+            return
+        release_stable_s = getattr(config, "BUTTON_RELEASE_STABLE_MS", 40) / 1000.0
+        high_since = None
+        while self._running:
+            try:
+                is_high = GPIO.input(pin) == GPIO.HIGH
+            except Exception as e:
+                logger.error(f"Pin {pin}: GPIO read failed during release monitor: {e}")
+                is_high = True
+            now = time.monotonic()
+            if is_high:
+                if high_since is None:
+                    high_since = now
+                elif now - high_since >= release_stable_s:
+                    with self._lock:
+                        self._press_active[pin] = False
+                    logger.debug(f"Pin {pin}: release stable")
+                    return
+            else:
+                high_since = None
+            time.sleep(0.01)
 
     def _hold_monitor(self):
         """Monitor for button release on hold-type buttons."""
@@ -146,7 +216,9 @@ class ButtonHandler:
             for pin, active in list(self._hold_active.items()):
                 if active and GPIO.input(pin) == GPIO.HIGH:
                     # Button released
-                    self._hold_active[pin] = False
+                    with self._lock:
+                        self._hold_active[pin] = False
+                        self._press_active[pin] = False
                     logger.info(f"Pin {pin}: hold ended")
                     cb = self._callbacks.get(pin, {}).get("hold_end")
                     if cb:

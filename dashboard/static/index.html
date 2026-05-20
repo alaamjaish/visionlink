@@ -136,6 +136,7 @@
     }
     .msg.user   .who { color: var(--warn); }
     .msg.gemini .who { color: var(--accent); }
+    .msg.openai .who { color: var(--good); }
     .msg.system .who { color: var(--muted); }
     .msg.tool {
       background: linear-gradient(90deg, rgba(60, 211, 159, 0.12), transparent);
@@ -278,6 +279,118 @@
     }
     .save-status.ok { color: var(--good); }
     .save-status.err { color: var(--bad); }
+
+    /* ---------- 6-button simulator ---------- */
+    .sim-grid {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 12px;
+    }
+    @media (max-width: 900px) {
+      .sim-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+    .sim-btn {
+      display: flex; flex-direction: column; align-items: stretch;
+      gap: 6px;
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 10px 10px;
+      cursor: pointer;
+      user-select: none;
+      transition: border-color 0.12s, transform 0.08s, box-shadow 0.15s;
+      position: relative;
+    }
+    .sim-btn:hover { border-color: var(--accent); }
+    .sim-btn:active { transform: scale(0.98); }
+    .sim-btn.armed { box-shadow: 0 0 0 2px var(--accent); }
+    .sim-btn .num {
+      font-size: 11px; color: var(--muted); letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+    .sim-btn .label {
+      font-size: 13px; font-weight: 700; color: var(--text);
+      letter-spacing: 0.04em;
+    }
+    .sim-btn .gestures {
+      font-size: 10.5px; color: var(--muted); line-height: 1.4;
+    }
+    .sim-btn .effective {
+      font-size: 10px;
+      color: var(--accent);
+      letter-spacing: 0.06em;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      margin-top: 2px;
+    }
+    .sim-btn .effective b { color: var(--good); font-weight: 700; }
+
+    /* clickable provider quick-toggle below each AI button */
+    .sim-toggle {
+      margin-top: 6px;
+      padding: 4px 8px;
+      font-size: 10.5px;
+      letter-spacing: 0.06em;
+      text-align: center;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      cursor: pointer;
+      user-select: none;
+      transition: border-color 0.12s, background 0.12s, transform 0.08s;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      color: var(--text);
+    }
+    .sim-toggle:hover { border-color: var(--accent); background: var(--panel-2); }
+    .sim-toggle:active { transform: scale(0.97); }
+    .sim-toggle.gemini { color: var(--warn); border-color: rgba(255,200,87,0.45); }
+    .sim-toggle.openai { color: var(--good);  border-color: rgba(60,211,159,0.55); }
+    .sim-toggle.flipping { opacity: 0.5; pointer-events: none; }
+    .sim-btn .gestures b { color: var(--text); font-weight: 600; }
+    .sim-btn.b6 { border-color: rgba(255, 90, 106, 0.55); background: linear-gradient(180deg, rgba(255,90,106,0.07), var(--panel-2)); }
+    .sim-btn.b6:hover { border-color: var(--bad); }
+    .sim-btn.recording { border-color: var(--warn); box-shadow: 0 0 0 2px var(--warn); }
+    .sim-btn.session-open { border-color: var(--good); box-shadow: 0 0 0 1px var(--good); }
+    .sim-btn.ai-live {
+      border-color: var(--warn);
+      box-shadow: 0 0 0 2px var(--warn), 0 0 18px rgba(255, 200, 87, 0.25);
+      background: linear-gradient(180deg, rgba(255,200,87,0.10), var(--panel-2));
+    }
+    .sim-btn.ai-live .label::after {
+      content: " — DBL TO STOP";
+      font-size: 10px;
+      color: var(--warn);
+      letter-spacing: 0.08em;
+      margin-left: 6px;
+    }
+    .sim-btn .gestures kbd {
+      display: inline-block;
+      padding: 0 5px; font-size: 10px;
+      background: var(--bg);
+      border: 1px solid var(--border); border-radius: 3px;
+      font-family: ui-monospace, monospace;
+      color: var(--text);
+    }
+    .sim-warn-toast {
+      position: fixed;
+      top: 18px; left: 50%; transform: translateX(-50%);
+      background: var(--warn); color: #1a0d00;
+      padding: 10px 18px;
+      border-radius: 8px; font-size: 13px; font-weight: 700;
+      letter-spacing: 0.04em; box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+      z-index: 200; opacity: 0; pointer-events: none;
+      transition: opacity 0.2s;
+    }
+    .sim-warn-toast.show { opacity: 1; }
+    .sim-warn-toast.bad { background: var(--bad); color: #fff5f5; }
+    .debug-toggle {
+      font-size: 10.5px; color: var(--muted);
+      letter-spacing: 0.12em; text-transform: uppercase;
+      display: inline-flex; align-items: center; gap: 6px;
+      cursor: pointer;
+    }
+    .debug-toggle input { accent-color: var(--accent); }
+    #debugSection { display: none; }
+    #debugSection.shown { display: block; }
   </style>
 </head>
 <body>
@@ -288,30 +401,86 @@
 
   <main>
     <section class="panel controls">
-      <h2>Controls</h2>
-      <div class="mode-row" style="margin-bottom:12px;">
-        <span style="font-size:12px;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase;margin-right:12px;">MODE</span>
-        <label class="mode-opt"><input type="radio" name="mode" value="audio" checked> Audio only <span class="hint">(15 min cap)</span></label>
-        <label class="mode-opt"><input type="radio" name="mode" value="snap"> Audio + Snap <span class="hint">(send one photo on demand)</span></label>
-        <label class="mode-opt"><input type="radio" name="mode" value="video"> Audio + Live Video <span class="hint">(1 fps, 2 min cap)</span></label>
+      <h2>6-Button Simulator <span style="font-size:10.5px;color:var(--muted);font-weight:400;margin-left:10px;">(single source of truth — same handlers GPIO will call)</span></h2>
+      <div class="sim-grid" id="simGrid">
+        <div class="sim-btn" data-btn="1" data-gestures="single">
+          <span class="num">B1 · GPIO 17</span>
+          <span class="label">📁 DOC SESSION</span>
+          <span class="gestures"><kbd>click</kbd> toggle session</span>
+        </div>
+        <div class="sim-btn" data-btn="2" data-gestures="single,double">
+          <span class="num">B2 · GPIO 27</span>
+          <span class="label">📷 CAM</span>
+          <span class="gestures"><kbd>click</kbd> photo · <kbd>dbl</kbd> 5s video</span>
+        </div>
+        <div class="sim-btn" data-btn="3" data-gestures="single">
+          <span class="num">B3 · GPIO 22</span>
+          <span class="label">🎙 VOICE NOTE</span>
+          <span class="gestures"><kbd>click</kbd> start · <kbd>click</kbd> stop &amp; upload</span>
+        </div>
+        <div class="sim-btn" data-btn="4" data-gestures="single,double">
+          <span class="num">B4 · GPIO 5</span>
+          <span class="label">🤖 AGENT</span>
+          <span class="gestures"><kbd>click</kbd> talk · <kbd>dbl</kbd> stop</span>
+          <span class="effective" id="b4Effective">→ <b>—</b></span>
+          <div class="sim-toggle" id="b4Toggle" data-field="b4_provider">⇄ tap to switch</div>
+        </div>
+        <div class="sim-btn" data-btn="5" data-gestures="single,double">
+          <span class="num">B5 · GPIO 6</span>
+          <span class="label">👁 AGENT + EYES</span>
+          <span class="gestures"><kbd>click</kbd> show & ask (auto-snaps) · <kbd>dbl</kbd> stop</span>
+          <span class="effective" id="b5Effective">→ <b>—</b></span>
+          <div class="sim-toggle" id="b5Toggle" data-field="b5_provider">⇄ tap to switch</div>
+        </div>
+        <div class="sim-btn b6" data-btn="6" data-gestures="single,double">
+          <span class="num">B6 · GPIO 13</span>
+          <span class="label">🆘 SOS</span>
+          <span class="gestures"><kbd>dbl click</kbd> arm · <kbd>dbl again</kbd> cancel</span>
+          <span class="effective" id="b6Effective">→ <b>—</b></span>
+          <div class="sim-toggle" id="b6Toggle" data-field="sos_provider">⇄ tap to switch</div>
+        </div>
       </div>
-      <div class="btn-row">
-        <button id="btnStart" class="btn-primary">START LIVE</button>
-        <button id="btnStop"  class="btn-danger"  disabled>STOP</button>
-        <button id="btnSnap"  class="btn-ghost"   disabled>SNAP TO GEMINI</button>
-        <button id="btnPhoto" class="btn-ghost">TAKE PHOTO</button>
-        <button id="btnTone"  class="btn-ghost">TEST TONE</button>
-        <button id="btnAgent" class="btn-ghost">⚙ AGENT</button>
-        <button id="btnClear" class="btn-ghost">CLEAR TRANSCRIPT</button>
+      <div style="margin-top:14px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;">
+        <label class="debug-toggle">
+          <input type="checkbox" id="debugToggle"> 🔧 Debug override
+        </label>
+        <button id="btnAgent" class="btn-ghost" style="padding:6px 14px;font-size:11.5px;">⚙ AGENT SETTINGS</button>
+        <button id="btnClear" class="btn-ghost" style="padding:6px 14px;font-size:11.5px;">CLEAR TRANSCRIPT</button>
+        <button id="btnTone"  class="btn-ghost" style="padding:6px 14px;font-size:11.5px;">TEST TONE</button>
       </div>
+
+      <div id="debugSection" style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px;">
+        <div class="mode-row" style="margin-bottom:10px;">
+          <span style="font-size:11px;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase;margin-right:12px;">PROVIDER (debug override)</span>
+          <label class="mode-opt"><input type="radio" name="provider" value="gemini" checked> 🟡 Gemini Live</label>
+          <label class="mode-opt"><input type="radio" name="provider" value="openai"> 🟢 OpenAI Realtime</label>
+        </div>
+        <div class="mode-row" id="geminiModeRow" style="margin-bottom:10px;">
+          <span style="font-size:11px;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase;margin-right:12px;">MODE</span>
+          <label class="mode-opt"><input type="radio" name="mode" value="audio" checked> Audio only</label>
+          <label class="mode-opt"><input type="radio" name="mode" value="snap"> Audio + Snap</label>
+          <label class="mode-opt"><input type="radio" name="mode" value="video"> Audio + Live Video</label>
+        </div>
+        <div class="mode-row" id="openaiModeRow" style="margin-bottom:12px;display:none;">
+          <span class="hint" style="font-size:11.5px;">OpenAI accepts a single image at any time during the session.</span>
+        </div>
+        <div class="btn-row">
+          <button id="btnStart" class="btn-primary">START LIVE</button>
+          <button id="btnStop"  class="btn-danger"  disabled>STOP</button>
+          <button id="btnSnap"  class="btn-ghost"   disabled>📷 SNAP &amp; ASK</button>
+          <button id="btnPhoto" class="btn-ghost">TAKE PHOTO</button>
+        </div>
+      </div>
+
       <div class="lights">
         <div class="light"><span class="dot" id="dotWs"></span>   WebSocket</div>
-        <div class="light"><span class="dot" id="dotLive"></span> Gemini Live</div>
+        <div class="light"><span class="dot" id="dotLive"></span> <span id="liveLabel">Live</span></div>
         <div class="light"><span class="dot" id="dotTurn"></span> Turn</div>
-        <div class="light"><span class="dot" id="dotVideo"></span> Video streaming</div>
+        <div class="light"><span class="dot" id="dotVideo"></span> Video</div>
         <div class="light" id="modeLabel" style="margin-left:auto;">mode: audio</div>
       </div>
     </section>
+    <div id="simWarnToast" class="sim-warn-toast"></div>
 
     <section class="panel">
       <h2>Live Transcript</h2>
@@ -342,11 +511,25 @@
       <div class="modal-body">
 
         <div class="field-group">
+          <label>Provider</label>
+          <div class="mode-row">
+            <label class="mode-opt"><input type="radio" name="agentProvider" value="gemini" checked> 🟡 Gemini Live</label>
+            <label class="mode-opt"><input type="radio" name="agentProvider" value="openai"> 🟢 OpenAI gpt-realtime-2</label>
+          </div>
+          <div class="help">
+            Each provider has its own system prompt, VAD config, and tunables —
+            saved to a separate file. Switching here only changes which set
+            of settings you're editing.
+          </div>
+        </div>
+
+        <div class="field-group">
           <label>Read-only</label>
           <div class="ro-row">
             <span><b>Model:</b> <code id="agentModel">—</code></span>
             <span><b>Settings file:</b> <code id="agentSettingsPath">—</code></span>
             <span><b>Live session:</b> <code id="agentLiveActive">—</code></span>
+            <span id="agentApiKeyRow" style="display:none;"><b>API key in .env:</b> <code id="agentApiKey">—</code></span>
           </div>
           <div class="help">
             Edits below are saved to disk and applied to the <b>next</b>
@@ -358,42 +541,122 @@
         <div class="field-group">
           <label>System Prompt</label>
           <textarea id="agentSystemPrompt" class="prompt"
-            placeholder="What should Gemini act like? What are its rules? What tools must it call?"></textarea>
+            placeholder="What should the agent act like? What are its rules? What tools must it call?"></textarea>
           <div class="help">
-            Gemini's brain. Tells it who it is, when to call tools, and how
+            The agent's brain. Tells it who it is, when to call tools, and how
             to speak. Reset button restores the prompt the project shipped with.
           </div>
         </div>
 
-        <div class="field-group">
-          <label>Voice Activity Detection (VAD)</label>
-          <div class="grid-2">
-            <div class="field-group">
-              <label>Start sensitivity</label>
-              <select id="vadStart">
-                <option value="HIGH">HIGH (triggers easily)</option>
-                <option value="LOW">LOW (needs strong signal to start)</option>
-              </select>
+        <!-- Gemini-only fields -->
+        <div id="geminiFields">
+          <div class="field-group">
+            <label>Voice Activity Detection (VAD)</label>
+            <div class="grid-2">
+              <div class="field-group">
+                <label>Start sensitivity</label>
+                <select id="vadStart">
+                  <option value="HIGH">HIGH (triggers easily)</option>
+                  <option value="LOW">LOW (needs strong signal to start)</option>
+                </select>
+              </div>
+              <div class="field-group">
+                <label>End sensitivity</label>
+                <select id="vadEnd">
+                  <option value="HIGH">HIGH (commits silence quickly)</option>
+                  <option value="LOW">LOW (waits for sustained silence)</option>
+                </select>
+              </div>
+              <div class="field-group">
+                <label>Prefix padding (ms)</label>
+                <input id="vadPrefix" type="number" min="0" max="2000" step="50">
+              </div>
+              <div class="field-group">
+                <label>Silence duration (ms)</label>
+                <input id="vadSilence" type="number" min="0" max="3000" step="50">
+              </div>
             </div>
-            <div class="field-group">
-              <label>End sensitivity</label>
-              <select id="vadEnd">
-                <option value="HIGH">HIGH (commits silence quickly)</option>
-                <option value="LOW">LOW (waits for sustained silence)</option>
-              </select>
-            </div>
-            <div class="field-group">
-              <label>Prefix padding (ms)</label>
-              <input id="vadPrefix" type="number" min="0" max="2000" step="50">
-            </div>
-            <div class="field-group">
-              <label>Silence duration (ms)</label>
-              <input id="vadSilence" type="number" min="0" max="3000" step="50">
+            <div class="help">
+              With our hot I2S mic, HIGH end-sensitivity + ~500ms silence works.
+              Drop end-sensitivity to LOW only if Gemini cuts you off mid-sentence.
             </div>
           </div>
-          <div class="help">
-            With our hot I2S mic, HIGH end-sensitivity + ~500ms silence works.
-            Drop end-sensitivity to LOW only if Gemini cuts you off mid-sentence.
+        </div>
+
+        <!-- OpenAI-only fields -->
+        <div id="openaiFields" style="display:none;">
+          <div class="field-group">
+            <label>Voice + Reasoning</label>
+            <div class="grid-2">
+              <div class="field-group">
+                <label>Voice</label>
+                <select id="oaiVoice">
+                  <option value="marin">marin (warm)</option>
+                  <option value="cedar">cedar (deeper)</option>
+                  <option value="alloy">alloy</option>
+                  <option value="ash">ash</option>
+                  <option value="ballad">ballad</option>
+                  <option value="coral">coral</option>
+                  <option value="echo">echo</option>
+                  <option value="sage">sage</option>
+                  <option value="shimmer">shimmer</option>
+                  <option value="verse">verse</option>
+                </select>
+              </div>
+              <div class="field-group">
+                <label>Reasoning effort</label>
+                <select id="oaiReasoning">
+                  <option value="minimal">minimal (fastest, cheapest)</option>
+                  <option value="low" selected>low (recommended for production)</option>
+                  <option value="medium">medium</option>
+                  <option value="high">high (best quality, slowest)</option>
+                </select>
+              </div>
+            </div>
+            <div class="help">
+              gpt-realtime-2 supports configurable reasoning effort. <b>low</b>
+              is OpenAI's recommended default. Use <b>high</b> for hard
+              multi-step requests.
+            </div>
+          </div>
+
+          <div class="field-group">
+            <label>Voice playback speed</label>
+            <div class="grid-2">
+              <div class="field-group">
+                <label>Speed (0.25..1.5)</label>
+                <input id="oaiSpeed" type="number" min="0.25" max="1.5" step="0.05">
+              </div>
+              <div></div>
+            </div>
+            <div class="help">
+              Default <b>1.2</b> — gpt-realtime-2's voices speak deliberately
+              at 1.0 (sounds slow word-by-word in industrial demos). 1.2 is
+              snappier without sounding chipmunky. Crank to 1.3-1.4 for very
+              fast delivery. Applies on the next START LIVE.
+            </div>
+          </div>
+
+          <div class="field-group">
+            <label>Server VAD</label>
+            <div class="grid-2">
+              <div class="field-group">
+                <label>Threshold (0..1)</label>
+                <input id="oaiVadThreshold" type="number" min="0" max="1" step="0.05">
+              </div>
+              <div class="field-group">
+                <label>Prefix padding (ms)</label>
+                <input id="oaiVadPrefix" type="number" min="0" max="2000" step="50">
+              </div>
+              <div class="field-group">
+                <label>Silence duration (ms)</label>
+                <input id="oaiVadSilence" type="number" min="0" max="3000" step="50">
+              </div>
+            </div>
+            <div class="help">
+              Higher threshold → less likely to false-trigger on background
+              noise. 0.5 is a sane default; raise to 0.7 in noisy factory.
+            </div>
           </div>
         </div>
 
@@ -406,14 +669,14 @@
             </div>
             <div class="field-group">
               <label>Speaker gain (×) — read-only</label>
-              <input id="spkGainRO" type="number" disabled value="3.0"
+              <input id="spkGainRO" type="number" disabled value="5.0"
                      style="opacity:0.5;">
             </div>
           </div>
           <div class="help">
             Mic gain compensates for the SPH0645's hot DC noise floor. 6× is
-            the validated sweet spot. Speaker gain lives in the audio worker
-            subprocess and isn't live-tunable yet.
+            the validated sweet spot for both providers. Speaker gain lives
+            in the audio worker subprocess and isn't live-tunable yet.
           </div>
         </div>
 
@@ -421,8 +684,8 @@
           <label>Tools (read-only)</label>
           <div id="toolsList" style="display:flex;flex-direction:column;gap:10px;"></div>
           <div class="help">
-            These are the functions Gemini may call. To change their code,
-            edit <code>src/ai/tools.py</code>.
+            These are the functions the agent may call. Same six tools shared
+            across both providers — to change them, edit <code>src/ai/tools.py</code>.
           </div>
         </div>
 
@@ -451,11 +714,19 @@
     const transcript = qs('transcript');
     const photoWrap  = qs('photoWrap');
     const logBox   = qs('log');
+    const geminiModeRow = qs('geminiModeRow');
+    const openaiModeRow = qs('openaiModeRow');
+    const liveLabel    = qs('liveLabel');
     let currentMode = 'audio';
+    let currentProvider = 'gemini';
     let frameCount = 0;
 
-    let currentTurn = { user: '', gemini: '' };
-    let currentNodes = { user: null, gemini: null };
+    let currentTurn = { user: '', gemini: '', openai: '' };
+    let currentNodes = { user: null, gemini: null, openai: null };
+
+    // Track whether B6 SOS is armed — when true, the live_state event
+    // is owned by SOS and B4/B5 should NOT visually light up as armed.
+    let sosArmed = false;
 
     function appendMsg(role, text, kind = role) {
       const div = document.createElement('div');
@@ -464,6 +735,7 @@
       who.className = 'who';
       who.textContent = role === 'user' ? 'you'
                       : role === 'gemini' ? 'gemini'
+                      : role === 'openai' ? 'openai'
                       : 'system';
       div.appendChild(who);
       const body = document.createElement('span');
@@ -473,6 +745,23 @@
       transcript.scrollTop = transcript.scrollHeight;
       return { el: div, body };
     }
+
+    function getProvider() {
+      const r = document.querySelector('input[name="provider"]:checked');
+      return r ? r.value : 'gemini';
+    }
+    function syncProviderUI() {
+      currentProvider = getProvider();
+      const isOai = currentProvider === 'openai';
+      geminiModeRow.style.display = isOai ? 'none' : '';
+      openaiModeRow.style.display = isOai ? '' : 'none';
+      liveLabel.textContent = isOai ? 'OpenAI Realtime' : 'Gemini Live';
+      qs('modelTag').textContent = isOai ? 'gpt-realtime-2' : 'gemini-3.1-flash-live-preview';
+    }
+    document.querySelectorAll('input[name="provider"]').forEach(el => {
+      el.addEventListener('change', syncProviderUI);
+    });
+    syncProviderUI();
 
     function appendLog(level, msg) {
       const line = document.createElement('div');
@@ -492,11 +781,19 @@
         currentMode = mode;
         modeLabel.textContent = 'mode: ' + mode;
       }
-      // SNAP button is enabled only in snap/video modes during an active session
-      btnSnap.disabled = !(on && (currentMode === 'snap' || currentMode === 'video'));
-      dotVideo.classList.toggle('on', !!on && currentMode === 'video');
-      // Disable mode selector while live
+      // SNAP rules:
+      //   Gemini → only enabled in snap/video modes during an active session
+      //   OpenAI → enabled any time the session is live (no mode distinction)
+      const isOai = currentProvider === 'openai' || mode === 'openai';
+      if (isOai) {
+        btnSnap.disabled = !on;
+      } else {
+        btnSnap.disabled = !(on && (currentMode === 'snap' || currentMode === 'video'));
+      }
+      dotVideo.classList.toggle('on', !!on && !isOai && currentMode === 'video');
+      // Disable provider + mode selectors while live
       document.querySelectorAll('input[name="mode"]').forEach(el => el.disabled = !!on);
+      document.querySelectorAll('input[name="provider"]').forEach(el => el.disabled = !!on);
       if (!on) { frameCount = 0; frameCountEl.textContent = ''; }
     }
 
@@ -548,12 +845,32 @@
             setLive(data.live_connected, data.mode);
             if (data.latest_photo) setPhoto(data.latest_photo);
             if (data.model) qs('modelTag').textContent = data.model;
+            // Reflect SOS state on the simulator if a panic mode is already armed
+            // server-side (e.g. user hard-refreshed mid-session).
+            sosArmed = !!data.sos_active_id;
+            setSimButtonState(6, 'armed', sosArmed);
+            if (data.sos_active_id) {
+              appendLog('error', `🆘 SOS already armed (${data.sos_active_id.slice(0,8)}) — double-click B6 to cancel`);
+            }
             break;
           case 'log':
             appendLog(data.level || 'info', data.msg);
             break;
           case 'live_state':
             setLive(data.connected, data.mode || currentMode);
+            // Mark whichever button started the session as armed-and-ready-
+            // to-stop. Server tags live_state with `start_button` (4 = audio
+            // agent, 5 = vision agent). Highlighting BOTH was misleading and
+            // got reported as a UI bug. SOS uses the same session machinery,
+            // so we still gate on sosArmed to keep B4/B5 clean during SOS.
+            if (!sosArmed && data.connected) {
+              const owner = (data.start_button === 5) ? 5 : 4;
+              setSimButtonState(4, 'ai-live', owner === 4);
+              setSimButtonState(5, 'ai-live', owner === 5);
+            } else {
+              setSimButtonState(4, 'ai-live', false);
+              setSimButtonState(5, 'ai-live', false);
+            }
             break;
           case 'transcript':
             onTranscript(data.role, data.text);
@@ -594,6 +911,53 @@
           case 'photo':
             setPhoto(data.url);
             break;
+          case 'session_opened':
+            setSimButtonState(1, 'session-open', true);
+            appendLog('info', `📁 doc session opened: ${data.label || data.session_id}`);
+            break;
+          case 'session_closed':
+            setSimButtonState(1, 'session-open', false);
+            appendLog('info', `📁 doc session closed`);
+            break;
+          case 'photo_saved':
+            appendLog('info', `📷 photo saved → ${data.path}`);
+            break;
+          case 'video_saved':
+            appendLog('info', `🎥 video saved → ${data.path}`);
+            break;
+          case 'voice_note_saved':
+            appendLog('info', `🎙 voice note saved (${data.duration_s?.toFixed?.(1) || '?'}s) → ${data.path}`);
+            break;
+          case 'b6_warn':
+            showToast(data.msg || 'Double-click required', 'bad');
+            break;
+          case 'sos_armed':
+            sosArmed = true;
+            setSimButtonState(6, 'armed', true);
+            // Force-clear B4/B5 visual state — SOS owns the session now
+            setSimButtonState(4, 'ai-live', false);
+            setSimButtonState(5, 'ai-live', false);
+            showToast('🆘 SOS PANIC MODE ARMED — double-click B6 again to cancel', 'bad');
+            appendLog('error', `🆘 SOS armed: ${data.id}`);
+            break;
+          case 'sos_cancelling':
+            showToast('🛑 Cancelling SOS — wearable will stop in ~2s');
+            appendLog('info', `🛑 SOS cancel requested: ${data.id}`);
+            break;
+          case 'sos_frame':
+            appendLog('info', `🆘 SOS frame #${data.n} → ${data.path}`);
+            break;
+          case 'sos_ended':
+            sosArmed = false;
+            setSimButtonState(6, 'armed', false);
+            showToast('🆘 SOS resolved');
+            appendLog('info', `🆘 SOS ended: ${data.sos_id}`);
+            break;
+          case 'wearable_settings_updated':
+            // Settings changed (could be from this tab, another tab, or the
+            // ops dashboard) — re-fetch and re-paint the toggles immediately.
+            refreshEffectiveSettings();
+            break;
         }
       };
     }
@@ -611,24 +975,43 @@
 
     btnStart.addEventListener('click', async () => {
       btnStart.disabled = true;
-      const mode = document.querySelector('input[name="mode"]:checked').value;
-      currentMode = mode;
-      appendLog('info', `Starting Gemini Live (mode: ${mode})...`);
-      await post('/api/live/start?mode=' + encodeURIComponent(mode));
+      const provider = getProvider();
+      currentProvider = provider;
+      if (provider === 'openai') {
+        appendLog('info', 'Starting OpenAI Realtime (gpt-realtime-2)...');
+        const r = await post('/api/live/oai/start?camera=true');
+        if (r && r.error) {
+          appendLog('error', 'OpenAI start: ' + r.error);
+          btnStart.disabled = false;
+        }
+      } else {
+        const mode = document.querySelector('input[name="mode"]:checked').value;
+        currentMode = mode;
+        appendLog('info', `Starting Gemini Live (mode: ${mode})...`);
+        await post('/api/live/start?mode=' + encodeURIComponent(mode));
+      }
     });
 
     btnStop.addEventListener('click', async () => {
       btnStop.disabled = true;
-      appendLog('info', 'Stopping Gemini Live...');
-      await post('/api/live/stop');
+      appendLog('info', 'Stopping any active AI session...');
+      // Unified stop — kills whichever session (Gemini or OpenAI) is alive
+      await post('/api/live/stop_any');
     });
 
     btnSnap.addEventListener('click', async () => {
       btnSnap.disabled = true;
-      appendLog('info', 'Sending snap to Gemini...');
-      const r = await post('/api/live/snap');
-      if (r && r.error) appendLog('error', 'Snap: ' + r.error);
-      setTimeout(() => { if (currentMode !== 'audio') btnSnap.disabled = false; }, 300);
+      if (currentProvider === 'openai') {
+        appendLog('info', 'Snap & Ask → OpenAI...');
+        const r = await post('/api/live/oai/snap');
+        if (r && r.error) appendLog('error', 'OpenAI snap: ' + r.error);
+        setTimeout(() => { btnSnap.disabled = false; }, 300);
+      } else {
+        appendLog('info', 'Sending snap to Gemini...');
+        const r = await post('/api/live/snap');
+        if (r && r.error) appendLog('error', 'Snap: ' + r.error);
+        setTimeout(() => { if (currentMode !== 'audio') btnSnap.disabled = false; }, 300);
+      }
     });
 
     btnPhoto.addEventListener('click', async () => {
@@ -648,8 +1031,171 @@
 
     btnClear.addEventListener('click', () => {
       transcript.innerHTML = '';
-      currentTurn = { user: '', gemini: '' };
-      currentNodes = { user: null, gemini: null };
+      currentTurn = { user: '', gemini: '', openai: '' };
+      currentNodes = { user: null, gemini: null, openai: null };
+    });
+
+    /* ---------- 6-button simulator ---------- */
+    const debugToggle = qs('debugToggle');
+    const debugSection = qs('debugSection');
+    const simWarnToast = qs('simWarnToast');
+
+    debugToggle.addEventListener('change', () => {
+      debugSection.classList.toggle('shown', debugToggle.checked);
+    });
+
+    function showToast(msg, kind) {
+      simWarnToast.textContent = msg;
+      simWarnToast.className = 'sim-warn-toast show' + (kind ? ' ' + kind : '');
+      clearTimeout(showToast._t);
+      showToast._t = setTimeout(() => {
+        simWarnToast.classList.remove('show');
+      }, 2400);
+    }
+
+    async function fireButton(n, event) {
+      appendLog('info', `B${n} → ${event}`);
+      try {
+        const r = await fetch(`/api/button/${n}/${encodeURIComponent(event)}`, { method: 'POST' });
+        const d = await r.json();
+        if (d?.result?.error) {
+          showToast(`B${n}: ${d.result.error}`, 'bad');
+          appendLog('error', `B${n} ${event}: ${d.result.error}`);
+        } else if (d?.result?.warning) {
+          showToast(d.result.warning);
+        }
+        return d;
+      } catch (e) {
+        showToast(`B${n} request failed`, 'bad');
+        appendLog('error', `B${n} ${event} fetch: ${e.message}`);
+      }
+    }
+
+    /* Wire each .sim-btn for click / dblclick / hold based on its data-gestures. */
+    document.querySelectorAll('.sim-btn').forEach(el => {
+      const n = parseInt(el.dataset.btn, 10);
+      const gestures = (el.dataset.gestures || '').split(',');
+
+      // Hold gestures: mousedown/mouseup → hold_start/hold_end
+      if (gestures.includes('hold')) {
+        let holdActive = false;
+        const start = (e) => {
+          e.preventDefault();
+          if (holdActive) return;
+          holdActive = true;
+          el.classList.add('recording');
+          fireButton(n, 'hold_start');
+        };
+        const end = (e) => {
+          if (!holdActive) return;
+          holdActive = false;
+          el.classList.remove('recording');
+          fireButton(n, 'hold_end');
+        };
+        el.addEventListener('mousedown', start);
+        el.addEventListener('touchstart', start, { passive: false });
+        el.addEventListener('mouseup', end);
+        el.addEventListener('mouseleave', end);
+        el.addEventListener('touchend', end);
+        return;
+      }
+
+      // Click + double-click handling (defer single-click 350ms if double registered)
+      const hasDouble = gestures.includes('double');
+      let clickTimer = null;
+      el.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (!hasDouble) {
+          fireButton(n, 'single');
+          return;
+        }
+        if (clickTimer) {
+          clearTimeout(clickTimer);
+          clickTimer = null;
+          fireButton(n, 'double');
+          el.classList.add('armed');
+          setTimeout(() => el.classList.remove('armed'), 600);
+        } else {
+          clickTimer = setTimeout(() => {
+            clickTimer = null;
+            fireButton(n, 'single');
+          }, 350);
+        }
+      });
+    });
+
+    // Reflect session/SOS state on the buttons
+    function setSimButtonState(n, cls, on) {
+      const el = document.querySelector(`.sim-btn[data-btn="${n}"]`);
+      if (el) el.classList.toggle(cls, !!on);
+    }
+
+    // ---------- Show current effective provider per button ----------
+    let currentSettings = {};
+    async function refreshEffectiveSettings() {
+      try {
+        const r = await fetch('/api/wearable/settings');
+        const s = await r.json();
+        currentSettings = s;
+        const fmt = p => p === 'openai' ? '🟢 <b>OpenAI</b>'
+                       : p === 'gemini' ? '🟡 <b>Gemini</b>'
+                       : '<b>—</b>';
+        qs('b4Effective').innerHTML = '→ ' + fmt(s.b4_provider);
+        qs('b5Effective').innerHTML = '→ ' + fmt(s.b5_provider) + ' · ' + (s.b5_vision_mode || 'snap_on_press');
+        qs('b6Effective').innerHTML = '→ ' + fmt(s.sos_provider) + ' · every ' + (s.sos_photo_interval_s || 10) + 's';
+        // Reflect current provider in toggle button label + color class
+        function paintToggle(toggleId, provider) {
+          const el = qs(toggleId);
+          if (!el) return;
+          el.classList.remove('gemini', 'openai');
+          if (provider === 'gemini' || provider === 'openai') el.classList.add(provider);
+          const next = provider === 'gemini' ? 'OpenAI' : 'Gemini';
+          el.innerHTML = `⇄ switch to <b>${next}</b>`;
+        }
+        paintToggle('b4Toggle', s.b4_provider);
+        paintToggle('b5Toggle', s.b5_provider);
+        paintToggle('b6Toggle', s.sos_provider);
+      } catch (e) {
+        // Silently ignore — we'll try again next time
+      }
+    }
+    refreshEffectiveSettings();
+    // Poll once per minute so changes from the ops dashboard surface here
+    // (no Supabase realtime subscription on this side).
+    setInterval(refreshEffectiveSettings, 60000);
+
+    // ---------- Per-button quick-toggle (Gemini ↔ OpenAI) ----------
+    document.querySelectorAll('.sim-toggle').forEach(el => {
+      el.addEventListener('click', async (e) => {
+        // Don't let the click bubble up to the parent .sim-btn
+        e.stopPropagation();
+        e.preventDefault();
+        const field = el.dataset.field;
+        if (!field) return;
+        const cur = currentSettings[field];
+        const next = cur === 'gemini' ? 'openai' : 'gemini';
+        el.classList.add('flipping');
+        try {
+          const r = await fetch('/api/wearable/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ [field]: next }),
+          });
+          const d = await r.json();
+          if (d.error) {
+            showToast('Switch failed: ' + d.error, 'bad');
+            appendLog('error', 'settings save: ' + d.error);
+          } else {
+            showToast(`${field.replace('_provider','').toUpperCase()} → ${next === 'openai' ? '🟢 OpenAI' : '🟡 Gemini'}`);
+            await refreshEffectiveSettings();
+          }
+        } catch (err) {
+          showToast('Switch failed', 'bad');
+          appendLog('error', 'settings save: ' + err.message);
+        } finally {
+          el.classList.remove('flipping');
+        }
+      });
     });
 
     /* ---------- Agent Settings modal ---------- */
@@ -669,7 +1215,33 @@
     const agentModel = qs('agentModel');
     const agentSettingsPath = qs('agentSettingsPath');
     const agentLiveActive = qs('agentLiveActive');
+    const agentApiKey   = qs('agentApiKey');
+    const agentApiKeyRow = qs('agentApiKeyRow');
+    const geminiFields = qs('geminiFields');
+    const openaiFields = qs('openaiFields');
+    const oaiVoice     = qs('oaiVoice');
+    const oaiReasoning = qs('oaiReasoning');
+    const oaiSpeed     = qs('oaiSpeed');
+    const oaiVadThreshold = qs('oaiVadThreshold');
+    const oaiVadPrefix    = qs('oaiVadPrefix');
+    const oaiVadSilence   = qs('oaiVadSilence');
     let defaultSystemPrompt = '';
+    function getAgentProvider() {
+      const r = document.querySelector('input[name="agentProvider"]:checked');
+      return r ? r.value : 'gemini';
+    }
+    function setAgentFieldsVisible() {
+      const isOai = getAgentProvider() === 'openai';
+      geminiFields.style.display = isOai ? 'none' : '';
+      openaiFields.style.display = isOai ? '' : 'none';
+      agentApiKeyRow.style.display = isOai ? '' : 'none';
+    }
+    document.querySelectorAll('input[name="agentProvider"]').forEach(el => {
+      el.addEventListener('change', () => {
+        setAgentFieldsVisible();
+        loadAgentSettings();
+      });
+    });
 
     function setSaveStatus(text, kind) {
       agentSaveStatus.textContent = text || '';
@@ -703,23 +1275,40 @@
     async function loadAgentSettings() {
       setSaveStatus('Loading...');
       try {
-        const r = await fetch('/api/agent/settings');
+        const provider = getAgentProvider();
+        const url = provider === 'openai'
+          ? '/api/agent/openai/settings'
+          : '/api/agent/settings';
+        const r = await fetch(url);
         const d = await r.json();
         agentModel.textContent = d.model || '';
         agentSettingsPath.textContent = d.settings_path || '';
         agentLiveActive.textContent = d.live_active ? 'YES' : 'no';
         agentSystemPrompt.value = d.system_prompt || '';
         defaultSystemPrompt = d.default_system_prompt || '';
-        if (d.vad) {
-          vadStart.value = d.vad.start_sensitivity || 'HIGH';
-          vadEnd.value   = d.vad.end_sensitivity || 'HIGH';
-          vadPrefix.value = d.vad.prefix_padding_ms;
-          vadSilence.value = d.vad.silence_duration_ms;
+        if (provider === 'openai') {
+          agentApiKey.textContent = d.has_api_key ? 'YES ✓' : 'NO — add OPENAI_API_KEY to .env';
+          oaiVoice.value = d.voice || 'marin';
+          oaiReasoning.value = d.reasoning_effort || 'low';
+          oaiSpeed.value = d.speed ?? 1.2;
+          if (d.vad) {
+            oaiVadThreshold.value = d.vad.threshold ?? 0.5;
+            oaiVadPrefix.value = d.vad.prefix_padding_ms ?? 300;
+            oaiVadSilence.value = d.vad.silence_duration_ms ?? 500;
+          }
+        } else {
+          if (d.vad) {
+            vadStart.value = d.vad.start_sensitivity || 'HIGH';
+            vadEnd.value   = d.vad.end_sensitivity || 'HIGH';
+            vadPrefix.value = d.vad.prefix_padding_ms;
+            vadSilence.value = d.vad.silence_duration_ms;
+          }
         }
         if (d.audio) {
           micGain.value = d.audio.mic_gain;
         }
         renderTools(d.tools || []);
+        setAgentFieldsVisible();
         setSaveStatus('');
       } catch (e) {
         setSaveStatus('Failed to load: ' + e.message, 'err');
@@ -743,7 +1332,11 @@
       if (!confirm('Reset agent settings to project defaults? This cannot be undone.')) return;
       setSaveStatus('Resetting...');
       try {
-        const r = await fetch('/api/agent/settings', {
+        const provider = getAgentProvider();
+        const url = provider === 'openai'
+          ? '/api/agent/openai/settings'
+          : '/api/agent/settings';
+        const r = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ reset: true }),
@@ -758,21 +1351,42 @@
     });
 
     agentSave.addEventListener('click', async () => {
-      const payload = {
-        system_prompt: agentSystemPrompt.value,
-        vad: {
-          start_sensitivity: vadStart.value,
-          end_sensitivity:   vadEnd.value,
-          prefix_padding_ms: parseInt(vadPrefix.value, 10),
-          silence_duration_ms: parseInt(vadSilence.value, 10),
-        },
-        audio: {
-          mic_gain: parseFloat(micGain.value),
-        },
-      };
+      const provider = getAgentProvider();
+      let payload, url;
+      if (provider === 'openai') {
+        url = '/api/agent/openai/settings';
+        payload = {
+          system_prompt: agentSystemPrompt.value,
+          voice: oaiVoice.value,
+          reasoning_effort: oaiReasoning.value,
+          speed: parseFloat(oaiSpeed.value),
+          vad: {
+            threshold: parseFloat(oaiVadThreshold.value),
+            prefix_padding_ms: parseInt(oaiVadPrefix.value, 10),
+            silence_duration_ms: parseInt(oaiVadSilence.value, 10),
+          },
+          audio: {
+            mic_gain: parseFloat(micGain.value),
+          },
+        };
+      } else {
+        url = '/api/agent/settings';
+        payload = {
+          system_prompt: agentSystemPrompt.value,
+          vad: {
+            start_sensitivity: vadStart.value,
+            end_sensitivity:   vadEnd.value,
+            prefix_padding_ms: parseInt(vadPrefix.value, 10),
+            silence_duration_ms: parseInt(vadSilence.value, 10),
+          },
+          audio: {
+            mic_gain: parseFloat(micGain.value),
+          },
+        };
+      }
       setSaveStatus('Saving...');
       try {
-        const r = await fetch('/api/agent/settings', {
+        const r = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
