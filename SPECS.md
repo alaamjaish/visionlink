@@ -1,38 +1,38 @@
-# VisionLink - Giyilebilir Endüstriyel Asistan Sistemi
-# VisionLink - Wearable Industrial Assistant System
+# VisionLink — Giyilebilir Endüstriyel Asistan Sistemi
+# VisionLink — Wearable Industrial Assistant System
 
 ---
 
-## 1. Proje Genel Bakis / Project Overview
+## 1. Proje Genel Bakış / Project Overview
 
-VisionLink, endüstriyel ortamlarda calisanlar icin tasarlanmis giyilebilir bir asistan sistemidir. Raspberry Pi 4 uzerinde calisan bu sistem, iki ana alt sistemden olusur:
+VisionLink, endüstriyel ortamlarda çalışanlar için tasarlanmış giyilebilir bir asistan sistemidir. Raspberry Pi 4 üzerinde çalışan bu sistem iki ana alt sistemden oluşur:
 
-1. **Dokumantasyon Alt Sistemi** - Calisma oturumlarinin kayit altina alinmasi
-2. **Yardimci (AI Asistan) Alt Sistemi** - Eller serbest yapay zeka destegi
+1. **Dokümantasyon Alt Sistemi** — Çalışma oturumlarının kayıt altına alınması
+2. **Yardımcı (Yapay Zekâ Asistanı) Alt Sistemi** — Eller serbest yapay zekâ desteği
 
 ---
 
-## 2. Yontem / Methodology
+## 2. Yöntem / Methodology
 
-### 2.1 Genel Yaklasim
+### 2.1 Genel Yaklaşım
 
-Sistem iki entegre alt sistemden olusur:
+Sistem birbiriyle entegre çalışan iki alt sistemden oluşur:
 
-#### Dokumantasyon Alt Sistemi
-- Calisanin bir "calisma oturumu" acmasina olanak tanir
-- Oturum altinda zaman damgali fotograf, video klip ve kisa ses notlari kaydeder
-- Tum kayitlar Supabase (uzak veritabani) uzerinde saklanir
-- Izlenebilirlik, egitim, ise alistirma ve denetim amacli erisim saglanir
-- Istenirse yerel veritabanina da gecirilebilir
+#### Dokümantasyon Alt Sistemi
+- Çalışanın bir "çalışma oturumu" açmasına olanak tanır.
+- Oturum süresince zaman damgalı fotoğraf, video klip ve kısa ses notlarını kaydeder.
+- Tüm kayıtlar Supabase (uzak veritabanı) üzerinde saklanır.
+- İzlenebilirlik, eğitim, işe alıştırma ve denetim amacıyla bu kayıtlara erişim sağlanır.
+- Gerektiğinde yerel bir veritabanına da aktarılabilir.
 
-#### Yardimci Alt Sistem (Yapay Zeka Asistani)
-- Gozluk araciligiyla eller serbest AI etkilesimi
-- QR kod okuyarak makine/parca tanimlamasi
-- Ilgili teknik bilgileri getirme ve sozlu yanit verme
-- Sesli komutla onceden tanimlanmis "ajan" islevlerini calistirma:
-  - Bakim raporu olusturma
-  - Supervizore bildirim gonderme
-  - Parca talebi olusturma
+#### Yardımcı Alt Sistem (Yapay Zekâ Asistanı)
+- Gözlük aracılığıyla eller serbest yapay zekâ etkileşimi sunar.
+- QR kod okuyarak makine veya parça tanımlaması yapar.
+- İlgili teknik bilgileri getirir ve sözlü olarak yanıt verir.
+- Sesli komutla önceden tanımlanmış "ajan" işlevlerini çalıştırır:
+  - Bakım raporu oluşturma
+  - Süpervizöre bildirim gönderme
+  - Parça talebi oluşturma
 
 ---
 
@@ -43,180 +43,180 @@ Fiziksel Girdiler
   ├── Kamera
   ├── Mikrofon
   ├── Fiziksel Butonlar (6 adet)
-  └── Operator Sesi
+  └── Operatör Sesi
         │
         ▼
-Kenar Hesaplama Katmani
+Kenar Hesaplama Katmanı
   └── Raspberry Pi 4 (Linux + Python)
         │
         ▼
-Baglanti Katmani
-  └── Wi-Fi (Internet / Yerel Ag)
+Bağlantı Katmanı
+  └── Wi-Fi (İnternet / Yerel Ağ)
         │
         ▼
-Bulut Katmani
+Bulut Katmanı
   ├── Supabase (PostgreSQL + Nesne Depolama)
-  │     └── Oturum verileri, medya dosyalari
-  └── AI Model API (Gemini / OpenAI)
-        └── Akil yurutme, SSS, rehberlik, TTS
+  │     └── Oturum verileri, medya dosyaları
+  └── Yapay Zekâ Model API'si (Gemini / OpenAI)
+        └── Akıl yürütme, SSS, rehberlik, TTS
               │
               ▼
-Cikislar
-  ├── Sesli geri bildirim (hoparlor / kulaklik)
-  └── Yapilandirilmis calisma oturumlarinin buluta yuklenmesi
+Çıkışlar
+  ├── Sesli geri bildirim (hoparlör / kulaklık)
+  └── Yapılandırılmış çalışma oturumlarının buluta yüklenmesi
 ```
 
-Raspberry Pi yerel koordinator olarak gorev yapar:
-- Buton olaylarini dinler
-- Medya yakalar
-- Oturum durumunu takip eder
-- Harici servislerle haberlesir
+Raspberry Pi yerel koordinatör olarak görev yapar:
+- Buton olaylarını dinler.
+- Medyayı yakalar.
+- Oturum durumunu takip eder.
+- Harici servislerle haberleşir.
 
 ---
 
-### 2.3 Donanim Tasarimi
+### 2.3 Donanım Tasarımı
 
-| Bilesen | Aciklama |
+| Bileşen | Açıklama |
 |---------|----------|
-| **Raspberry Pi 4 Model B** | Ana islem birimi. Kamera, mikrofon, ag baglantisi ve GPIO butonlarini yonetir |
-| **Kamera Modulu** | Fotograf, kisa video cekimi ve QR kod okuma |
-| **Mikrofon** | Ses notlari ve asistan etkilesimleri icin kayit |
-| **Hoparlor / Kemik Iletimli Kulaklik** | Asistanin sesli yanitlari |
-| **6 Fiziksel Buton (GPIO)** | 3x Dokumantasyon Modu + 3x Asistan (AI) Modu |
-| **Batarya / Powerbank** | Mobil guc kaynagi |
-| **3D Baskili Kasa / Montaj** | Tum bilesenleri giyilebilir formda birlestirir (gozluk, kask vb.) |
+| **Raspberry Pi 4 Model B** | Ana işlem birimi. Kamerayı, mikrofonu, ağ bağlantısını ve GPIO butonlarını yönetir. |
+| **Kamera Modülü** | Fotoğraf çekimi, kısa video kaydı ve QR kod okuma. |
+| **Mikrofon** | Ses notları ve asistan etkileşimleri için kayıt. |
+| **Hoparlör / Kemik İletimli Kulaklık** | Asistanın sesli yanıtlarını iletir. |
+| **6 Fiziksel Buton (GPIO)** | 3 adet Dokümantasyon Modu + 3 adet Asistan (Yapay Zekâ) Modu. |
+| **Batarya / Powerbank** | Mobil güç kaynağı. |
+| **3D Baskılı Kasa / Montaj** | Tüm bileşenleri giyilebilir bir formda (gözlük, kask vb.) birleştirir. |
 
 ---
 
-### 2.4 Yazilim Tasarimi
+### 2.4 Yazılım Tasarımı
 
-#### 2.4.1 Cihaz Calisma Zamani
-- Raspberry Pi OS (Linux tabanli)
-- Acilista Python tabanli kontrol yazilimi otomatik baslar
-- Surekli olarak:
-  - GPIO butonlarini dinler
-  - Oturum durumunu takip eder
-  - Medya (foto, video, ses) yakalar
-  - Uygun zamanda Supabase'e yukler
-  - Asistanla sesli etkilesimi yonetir
+#### 2.4.1 Cihaz Çalışma Zamanı
+- Raspberry Pi OS (Linux tabanlı).
+- Açılışta Python tabanlı kontrol yazılımı otomatik olarak başlar.
+- Sürekli olarak:
+  - GPIO butonlarını dinler.
+  - Oturum durumunu takip eder.
+  - Medyayı (fotoğraf, video, ses) yakalar.
+  - Uygun zamanda Supabase'e yükler.
+  - Asistan ile olan sesli etkileşimi yönetir.
 
 #### 2.4.2 Veri Depolama ve Supabase Entegrasyonu
-- **Veritabani (PostgreSQL):** Calisma oturumu meta verileri
-- **Dosya Depolama (Bucket):** Goruntu, video ve ses dosyalari
+- **Veritabanı (PostgreSQL):** Çalışma oturumu üst verileri (metadata).
+- **Dosya Depolama (Bucket):** Görüntü, video ve ses dosyaları.
 
-Oturum Akisi:
-1. Oturum acildiginda → Supabase'te yeni satir olusturulur
-2. Oturum bittiginde:
-   - `end_time` bilgisi islenir
-   - SD karttaki tum dosyalar Supabase'e yuklenir
-   - Medya dosyalari ilgili oturumla eslestirilir
+Oturum Akışı:
+1. Oturum açıldığında → Supabase'te yeni bir satır oluşturulur.
+2. Oturum bittiğinde:
+   - `end_time` bilgisi işlenir.
+   - SD karttaki tüm dosyalar Supabase'e yüklenir.
+   - Medya dosyaları ilgili oturum ile eşleştirilir.
 
 ---
 
 ### 2.5 Fonksiyonel Bloklar
 
-#### 2.5.1 Dokumantasyon Modu (Butonlar 1-3)
+#### 2.5.1 Dokümantasyon Modu (Butonlar 1-3)
 
-**Buton 1 - Oturum Baslat/Durdur:**
-- Ilk basisita yeni oturum olusturur → Supabase'e bildirir
-- Ikinci basista oturumu kapatir → tum verileri yukler
+**Buton 1 — Oturum Başlat / Durdur:**
+- İlk basışta yeni oturum oluşturur → Supabase'e bildirir.
+- İkinci basışta oturumu kapatır → tüm verileri yükler.
 
-**Buton 2 - Fotograf / Video Cekimi:**
-- Tek basis: anlik fotograf + belirli araliklarla (or. 30 sn) otomatik cekim
-- Cift basis: kisa video kaydi baslatir
-- Dosyalar oturum kimligiyle etiketlenir → Supabase'e yuklenir
+**Buton 2 — Fotoğraf / Video Çekimi:**
+- Tek basış: anlık fotoğraf çeker ve ayrıca belirli aralıklarla (ör. 30 saniye) otomatik çekim yapar.
+- Çift basış: kısa video kaydı başlatır.
+- Dosyalar oturum kimliğiyle etiketlenir → Supabase'e yüklenir.
 
-**Buton 3 - Ses Notu:**
-- Basili tutma → ses kaydi baslar
-- Birakma → kayit durur
-- Ses dosyasi → Supabase'e yuklenir
+**Buton 3 — Ses Notu:**
+- Basılı tutma → ses kaydı başlar.
+- Bırakma → kayıt durur.
+- Ses dosyası → Supabase'e yüklenir.
 
-#### 2.5.2 Yardimci Modu (Butonlar 4-6)
+#### 2.5.2 Yardımcı Modu (Butonlar 4-6)
 
-**Buton 4 - AI Kamera / QR Modu:**
-- Kamera QR kodu okur → ilgili parca bilgilerini bulur
-- Calisanin sorusu kaydedilir
-- Goruntu + ses + baglam → AI API'sine gonderilir
-- Yanit sesli olarak geri verilir
+**Buton 4 — Yapay Zekâ Kamera / QR Modu:**
+- Kamera QR kodu okur → ilgili parça bilgilerini getirir.
+- Çalışanın sorusu kaydedilir.
+- Görüntü + ses + bağlam → yapay zekâ API'sine gönderilir.
+- Yanıt sesli olarak geri verilir.
 
-**Buton 5 - AI Sesli Soru-Cevap:**
-- Calisan kisa soru sorar (or. "Bu hata kodu ne anlama geliyor?")
-- Soru → AI modeline gonderilir → yanit sesli doner
+**Buton 5 — Yapay Zekâ Sesli Soru-Cevap:**
+- Çalışan kısa bir soru sorar (ör. "Bu hata kodu ne anlama geliyor?").
+- Soru → yapay zekâ modeline gönderilir → yanıt sesli olarak döner.
 
-**Buton 6 - Ajan Modu (Komut Yurutme):**
-- Calisan komut verir (or. "Son oturum icin rapor olustur ve supervizore gonder")
-- AI ajani onceden tanimlanmis fonksiyonlari cagirir
-- Cevabi sesli olarak onaylar
-
----
-
-### 2.6 Bagimli / Bagimsiz Degiskenler
-
-**Bagimsiz Degiskenler (kontrol edilen):**
-- VisionLink kullanimi vs. geleneksel yontem
-- Asistan modunun aktif olup olmamasi
-- Yapilandirilmis oturum kaydinin zorunlu olup olmamasi
-
-**Bagimli Degiskenler (etkilenen):**
-- Gorevin tamamlanma suresi
-- Eksik veya belgelenmemis adimlarin sayisi
-- Yeni calisanin gorevleri kendi basina tamamlayabilme duzeyi
-- Dogru prosedural yanit alma hizi
+**Buton 6 — Ajan Modu (Komut Yürütme):**
+- Çalışan bir komut verir (ör. "Son oturum için rapor oluştur ve süpervizöre gönder").
+- Yapay zekâ ajanı önceden tanımlanmış fonksiyonları çağırır.
+- Yapılan işlemi sesli olarak onaylar.
 
 ---
 
-### 2.7 Test ve Dogrulama
+### 2.6 Bağımlı / Bağımsız Değişkenler
 
-**Test Kosullari:**
-1. **Temel durum:** Cihaz olmadan manuel yontemlerle gorev tamamlama
-2. **VisionLink ile:** Ayni gorev cihaz kullanilarak yapilir
+**Bağımsız Değişkenler (kontrol edilen):**
+- VisionLink kullanımı ile geleneksel yöntemin karşılaştırılması.
+- Asistan modunun aktif olup olmaması.
+- Yapılandırılmış oturum kaydının zorunlu olup olmaması.
 
-**Nicel Olcutler:**
-- Yapay zeka yanit gecikmesi (soru → cevap suresi)
-- Oturum kayit basarisi (tum medya dogru sekilde kaydedildi mi)
-- Supabase uzerindeki oturum kaydinin butunlugu
-
-**Nitel Gozlemler:**
-- Asistan, acemi calisanin kafa karisikligini azaltiyor mu?
-- Ajan modu eller serbest rapor uretimini sagliyor mu?
-- Dokumantasyon modu bilgi kaybini azaltiyor mu?
+**Bağımlı Değişkenler (etkilenen):**
+- Görevin tamamlanma süresi.
+- Eksik ya da belgelenmemiş adımların sayısı.
+- Yeni çalışanın görevleri kendi başına tamamlayabilme düzeyi.
+- Doğru prosedürel yanıtın elde edilme hızı.
 
 ---
 
-### 2.8 Is Paketleri
+### 2.7 Test ve Doğrulama
 
-| Paket | Icerik |
+**Test Koşulları:**
+1. **Temel durum:** Cihaz olmadan, manuel yöntemlerle görev tamamlama.
+2. **VisionLink ile:** Aynı görev cihaz kullanılarak yapılır.
+
+**Nicel Ölçütler:**
+- Yapay zekâ yanıt gecikmesi (soru → cevap süresi).
+- Oturum kayıt başarısı (tüm medya doğru biçimde kaydedildi mi).
+- Supabase üzerindeki oturum kaydının bütünlüğü.
+
+**Nitel Gözlemler:**
+- Asistan, acemi çalışanın kafa karışıklığını azaltıyor mu?
+- Ajan modu eller serbest rapor üretimini sağlıyor mu?
+- Dokümantasyon modu bilgi kaybını azaltıyor mu?
+
+---
+
+### 2.8 İş Paketleri
+
+| Paket | İçerik |
 |-------|--------|
-| **Donanim Entegrasyonu** | Raspberry Pi, kamera, mikrofon, butonlar, hoparlor, batarya, 3D kasa |
-| **Temel Yazilim** | Python kontrol yazilimi, GPIO olay yonetimi, oturum durumu, medya yakalama |
-| **Bulut Veritabani** | Supabase tablolari, dosya yukleme sistemi, oturum bitirme mantigi |
-| **Yapay Zeka Etkilesimi** | Sesli SSS, kamera/QR destekli yardim, ajan modunun fonksiyonlari |
-| **Test & Degerlendirme** | Endustriyel senaryo simulasyonu, zaman olcumleri, veri butunlugu |
+| **Donanım Entegrasyonu** | Raspberry Pi, kamera, mikrofon, butonlar, hoparlör, batarya, 3D kasa. |
+| **Temel Yazılım** | Python kontrol yazılımı, GPIO olay yönetimi, oturum durumu, medya yakalama. |
+| **Bulut Veritabanı** | Supabase tabloları, dosya yükleme sistemi, oturum bitirme mantığı. |
+| **Yapay Zekâ Etkileşimi** | Sesli SSS, kamera/QR destekli yardım, ajan modunun fonksiyonları. |
+| **Test ve Değerlendirme** | Endüstriyel senaryo simülasyonu, zaman ölçümleri, veri bütünlüğü. |
 
 ---
 
 ### 2.9 Fizibilite
 
-- Tum bilesenler piyasada kolayca bulunabilir
-- Acik kaynakli dokumantasyona sahip
-- Dusuk maliyetli
-- Moduler
-- Degistirilebilir (AI modeli ic sistemle degistirilebilir)
-- Farkli sektorlere uyarlanabilir
-- Gelecekte genisletilebilir (or. gorme engelliler icin rehberlik)
+- Tüm bileşenler piyasada kolayca bulunabilir.
+- Açık kaynaklı dokümantasyona sahiptir.
+- Düşük maliyetlidir.
+- Modüler yapıdadır.
+- Değiştirilebilir (yapay zekâ modeli yerel sistemle değiştirilebilir).
+- Farklı sektörlere uyarlanabilir.
+- Gelecekte genişletilebilir (ör. görme engelliler için rehberlik).
 
 ---
 
 ## Teknik Notlar / Technical Notes
 
 - **Platform:** Raspberry Pi 4 Model B
-- **OS:** Raspberry Pi OS (Linux)
+- **İşletim Sistemi:** Raspberry Pi OS (Linux)
 - **Dil:** Python
-- **Veritabani:** Supabase (PostgreSQL + Storage)
-- **AI API:** Gemini / OpenAI (henuz kesinlesmedi)
-- **Iletisim:** Wi-Fi
-- **GPIO Butonlari:** 6 adet fiziksel buton
+- **Veritabanı:** Supabase (PostgreSQL + Storage)
+- **Yapay Zekâ API'si:** Gemini / OpenAI (henüz kesinleşmedi)
+- **İletişim:** Wi-Fi
+- **GPIO Butonları:** 6 adet fiziksel buton
 
 ---
 
-*Bu dokuman VisionLink projesinin teknik spesifikasyonlarini icerir ve gelistirme surecinde guncellenecektir.*
+*Bu doküman VisionLink projesinin teknik spesifikasyonlarını içerir ve geliştirme süreci boyunca güncellenecektir.*
